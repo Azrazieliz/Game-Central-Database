@@ -364,7 +364,7 @@ def parse_game8_page(sess,item):
     except Exception as e:return {**item,"error":str(e)}
     soup=BeautifulSoup(r.text,"html.parser")
     h1=clean((soup.find("h1") or {}).get_text(" ",strip=True) if soup.find("h1") else item["catalog_name"])
-    if "の評価と基本情報" not in h1:
+    if not any(marker in h1 for marker in ("の評価と基本情報","のスキルと基本情報")):
         return {**item,"html":r.text,"retrieved_at":retrieved,"h1":h1,"non_character":True}
     rarity=(re.search(r"（(UR[＋+](?:2026)?|UR|SSR|SR|R)）",h1.replace("＋","+")) or [None,None])[1]
     basic=find_basic_table(soup)
@@ -789,7 +789,7 @@ def main():
         rows=[{"entity_id":e["id"],"name":e["canonical_name"],"tier":a["tier_label"],"rank_order":a["rank_order"],"score":a["total_score"]} for e in entities for a in e["analysis"] if a["mode_key"]==mode and a["tier_label"]!="UNRANKED"]
         tiers.append({"ranking_key":"codex_analytical","mode_key":mode,"source_tiers_used":False,"entries":sorted(rows,key=lambda x:x["rank_order"] or 10**9)})
     report={"generated_at":generated,"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_mapped":len(matches),"game8_unmatched":len(unmatched),"non_character_pages_excluded":len(excluded_noncharacters),"characters_with_normalized_skills":sum(bool(e["skills"]) for e in entities),"characters_ranked":sum(any(a["tier_label"]!="UNRANKED" for a in e["analysis"]) for e in entities),"characters_with_full_art":sum(any(i["asset_type"]=="full_art" for i in e["images"]) for e in entities),"source_tiers_used_for_analysis":False,"unmatched":unmatched[:200],"excluded_noncharacters":excluded_noncharacters}
-    cat={"generated_at":generated,"engine_version":"0.6.2","games":[{"id":1,"game_key":"shoujo_kaisen","name":"Shoujo Kaisen","adapter_key":"shoujo_kaisen","icon_path":icon,"character_count":len(entities),"data_report":report}],"patches":[],"entities":entities,"unresolved_entity_count":len(unmatched),"unresolved_entities":unmatched,"compatibility":edges,"tier_lists":tiers,"roster_accounts":[],"source_manifest":[source_record("Kaisen Wiki",KAISEN_HEROES,kret,"character.catalog"),source_record("Game8",GAME8_CATALOG,gret,"character.catalog")],"analysis_policy":{"source_tier_inputs":False,"ranking_basis":"normalized kits only","modes":list(MODE_WEIGHTS)}}
+    cat={"generated_at":generated,"engine_version":"0.6.3","games":[{"id":1,"game_key":"shoujo_kaisen","name":"Shoujo Kaisen","adapter_key":"shoujo_kaisen","icon_path":icon,"character_count":len(entities),"data_report":report}],"patches":[],"entities":entities,"unresolved_entity_count":len(unmatched),"unresolved_entities":unmatched,"compatibility":edges,"tier_lists":tiers,"roster_accounts":[],"source_manifest":[source_record("Kaisen Wiki",KAISEN_HEROES,kret,"character.catalog"),source_record("Game8",GAME8_CATALOG,gret,"character.catalog")],"analysis_policy":{"source_tier_inputs":False,"ranking_basis":"normalized kits only","modes":list(MODE_WEIGHTS)}}
     (data/"catalog.json").write_text(json.dumps(cat,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
     (data/"catalog.js").write_text("window.CODEX_CATALOG="+json.dumps(cat,ensure_ascii=False,separators=(",",":"))+";",encoding="utf-8")
     (out/"source-sync-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
