@@ -2,7 +2,7 @@
 import re, requests
 from bs4 import BeautifulSoup
 BASE="https://kaisen-wiki.h0rny.net"
-UA="GameCodex-inspect/1.0"
+UA="GameCodex/0.6 (+https://github.com/Azrazieliz/Game-Central-Database)"
 s=requests.Session();s.headers.update({"User-Agent":UA})
 urls=[
  BASE+"/heroes?entry=huamulan01",
@@ -11,7 +11,7 @@ urls=[
  BASE+"/transcendent",
 ]
 for url in urls:
-    r=s.get(url,timeout=30);r.raise_for_status()
+    try:\n        r=s.get(url,timeout=30)\n        print("STATUS",r.status_code,url)\n        r.raise_for_status()\n    except Exception as exc:\n        print("FETCH_ERROR",url,repr(exc));continue
     soup=BeautifulSoup(r.text,"html.parser")
     print("\n===URL",url,"BYTES",len(r.text),"TITLE",soup.title.get_text(" ",strip=True) if soup.title else "","===")
     print("ENTRY_LINKS",[(a.get_text(" ",strip=True)[:60],a.get("href")) for a in soup.find_all("a",href=True) if "entry=" in a.get("href","")][:20])
