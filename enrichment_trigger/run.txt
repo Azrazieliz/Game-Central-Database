@@ -1,0 +1,1 @@
+validate Kaisen hero details and subsystems\n
