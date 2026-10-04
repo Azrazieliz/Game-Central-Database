@@ -76,7 +76,7 @@ jobs:
 
       - name: Trim pack-builder files from APK payload
         run: |
-          rm -rf android/app/src/main/assets/codex/raw
+          rm -rf android/app/src/main/assets/codex/raw android/app/src/main/assets/codex/research
           rm -f android/app/src/main/assets/codex/data/catalog.json
           rm -f android/app/src/main/assets/codex/identity-match-report.json
           rm -f android/app/src/main/assets/codex/source-sync-report.json
