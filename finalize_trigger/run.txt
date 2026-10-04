@@ -3,3 +3,4 @@ v0.8.0-branded-ui
 v0.8.0-no-tier-primary-ui
 v0.8.0-final-mobile-ui
 v0.8.0-fast-art-final
+v0.8.0-hide-source-errors
