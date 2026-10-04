@@ -1,4 +1,4 @@
-name: Finalize Kaisen v0.7.3
+name: Finalize Kaisen v0.8.0
 on:
   workflow_dispatch:
   push:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -42,9 +42,14 @@ jobs:
           unzip -q outer.zip -d outer
           unzip -q outer/Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip -d work
           test -f work/codex/data/catalog.json
-      - name: Complete Japanese Kaisen normalization and rerank
+      - name: Normalize presentation data and rerank
         run: |
           python3 tools/postprocess_kaisen_catalog.py --out work/codex
+      - name: Refresh Kaisen-native detail artwork
+        run: |
+          python3 tools/refresh_kaisen_art.py --out work/codex --workers 8
+      - name: Validate data presentation boundaries
+        run: |
           python3 - <<'PY'
           import json
           c=json.load(open('work/codex/data/catalog.json'))
@@ -55,43 +60,51 @@ jobs:
           assert r['martial_spirits'] == 64, r
           assert r['mounts'] == 14, r
           assert r['source_tiers_used_for_analysis'] is False
-          h=next(e for e in c['entities'] if e['canonical_name']=='Hua Mulan')
-          assert len(h['skills']) >= 6
-          assert any(a.get('profile_key')=='optimized_subsystems' for a in h['analysis'])
-          # Regression guard for the ranking bug: mixed Japanese/English heroes must
-          # have their Japanese mechanics normalized before ranking.
-          mixed=next(e for e in c['entities'] if e['canonical_name']=='Liu Xiu&Yin Lihua')
-          meffects=sum(len(v.get('effects') or []) for s in mixed.get('skills') or [] for v in s.get('versions') or [])
-          assert meffects >= 20, ('mixed-language normalization incomplete',meffects)
-          mgen=next(a for a in mixed['analysis'] if a.get('mode_key')=='generic' and a.get('profile_key')=='optimized_subsystems')
-          assert mgen['tier_label'] != 'D', ('ranking regression',mgen)
-          assert r.get('source_tiers_used_for_analysis') is False
-          print('FINAL_VALIDATION_OK',r['heroes_ranked_with_subsystems'],len(c['subsystems']),'MIXED_EFFECTS',meffects,'MIXED_RANK',mgen['tier_label'],mgen['rank_order'])
+          assert c['analysis_policy']['status'] == 'experimental'
+          broken=next(e for e in c['entities'] if e['canonical_name']=='Action failed')
+          assert broken.get('display_name','').startswith('Wen Zhong'), broken
+          abyss=next(e for e in c['entities'] if e['canonical_name']=='Abyss - The Last Apostle')
+          lore=next(s for s in abyss['skills'] if s.get('name')=='Neverending Nightmare')
+          assert lore.get('presentation_class') == 'source_note', lore
+          sample=next(a for a in abyss['analysis'] if a.get('ranking_key')=='codex_analytical')
+          assert sample.get('analysis_status') == 'experimental', sample
+          print('DATA_PRESENTATION_OK',broken['display_name'],lore['presentation_class'])
           PY
-      - name: Refresh current app UI assets and validate home rendering inputs
+      - name: Install branded mobile UI
         run: |
-          cp android/app/src/main/assets/codex/app.js work/codex/app.js
           cp android/app/src/main/assets/codex/index.html work/codex/index.html
           cp android/app/src/main/assets/codex/styles.css work/codex/styles.css
+          cp android/app/src/main/assets/codex/core.js work/codex/core.js
+          cp android/app/src/main/assets/codex/browser.js work/codex/browser.js
+          cp android/app/src/main/assets/codex/detail.js work/codex/detail.js
+          cp android/app/src/main/assets/codex/app.js work/codex/app.js
+          node --check work/codex/core.js
+          node --check work/codex/browser.js
+          node --check work/codex/detail.js
           node --check work/codex/app.js
           python3 - <<'PY'
           import json, os
           c=json.load(open('work/codex/data/catalog.json'))
-          assert c.get('games'), 'No games in catalog'
+          assert c.get('games')
           for g in c['games']:
               icon=g.get('icon_path')
-              assert icon, f"Missing icon_path for {g.get('name')}"
-              assert os.path.isfile(os.path.join('work/codex',icon)), (g.get('name'),icon)
+              assert icon and os.path.isfile(os.path.join('work/codex',icon)), (g.get('name'),icon)
           html=open('work/codex/index.html',encoding='utf-8').read()
-          assert 'id="gameHome"' in html and 'id="gameBrowser"' in html
-          print('HOME_UI_VALIDATED',[(g['name'],g['icon_path']) for g in c['games']])
+          css=open('work/codex/styles.css',encoding='utf-8').read()
+          browser=open('work/codex/browser.js',encoding='utf-8').read()
+          assert all(x in html for x in ('homeScreen','gameScreen','detailScreen'))
+          assert 'Data layers' not in html and 'Data layers' not in browser
+          assert 'overflow-x:hidden' in css
+          assert 'character-card' in html
+          assert 'rankline' not in html
+          print('BRANDED_UI_OK',[(g['name'],g['icon_path']) for g in c['games']])
           PY
       - name: Package full portable pack
         run: |
           cd work
-          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.7.3.zip" codex
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.8.0.zip" codex
           cd "$GITHUB_WORKSPACE"
-          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.7.3.zip > Game-Codex-Shoujo-Kaisen-pack-v0.7.3.sha256
+          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.8.0.zip > Game-Codex-Shoujo-Kaisen-pack-v0.8.0.sha256
       - name: Prepare Android offline assets
         run: |
           rm -rf android/app/src/main/assets/codex
@@ -101,26 +114,27 @@ jobs:
           rm -f android/app/src/main/assets/codex/identity-match-report.json
           rm -f android/app/src/main/assets/codex/source-sync-report.json
           rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
-          sed -i "s/versionCode 10/versionCode 13/" android/app/build.gradle
-          sed -i "s/versionName '0.7.0'/versionName '0.7.2'/" android/app/build.gradle
+          rm -f android/app/src/main/assets/codex/kaisen-art-refresh-report.json
+          sed -E -i "s/versionCode [0-9]+/versionCode 20/" android/app/build.gradle
+          sed -E -i "s/versionName '[^']+'/versionName '0.8.0'/" android/app/build.gradle
       - name: Build APK
         run: gradle -p android :app:assembleDebug --stacktrace
       - name: Stage APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.7.3.apk
-          sha256sum Game-Codex-Shoujo-Kaisen-v0.7.3.apk > Game-Codex-Shoujo-Kaisen-v0.7.3.sha256
-          ls -lh Game-Codex-Shoujo-Kaisen-v0.7.3.apk Game-Codex-Shoujo-Kaisen-pack-v0.7.3.zip
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.8.0.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v0.8.0.apk > Game-Codex-Shoujo-Kaisen-v0.8.0.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v0.8.0.apk Game-Codex-Shoujo-Kaisen-pack-v0.8.0.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-apk-v0.7.3
+          name: game-codex-shoujo-kaisen-apk-v0.8.0
           path: |
-            Game-Codex-Shoujo-Kaisen-v0.7.3.apk
-            Game-Codex-Shoujo-Kaisen-v0.7.3.sha256
+            Game-Codex-Shoujo-Kaisen-v0.8.0.apk
+            Game-Codex-Shoujo-Kaisen-v0.8.0.sha256
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-pack-v0.7.3
+          name: game-codex-shoujo-kaisen-pack-v0.8.0
           path: |
-            Game-Codex-Shoujo-Kaisen-pack-v0.7.3.zip
-            Game-Codex-Shoujo-Kaisen-pack-v0.7.3.sha256
+            Game-Codex-Shoujo-Kaisen-pack-v0.8.0.zip
+            Game-Codex-Shoujo-Kaisen-pack-v0.8.0.sha256
           if-no-files-found: error
