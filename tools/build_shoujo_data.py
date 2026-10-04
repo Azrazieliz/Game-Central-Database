@@ -9,6 +9,8 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import requests
+import cv2
+import numpy as np
 from bs4 import BeautifulSoup, NavigableString, Tag
 from PIL import Image
 from pypinyin import lazy_pinyin
@@ -20,6 +22,23 @@ GAME8_CATALOG="https://game8.jp/shoujokaisen/419407"
 UA="GameCodex/0.6 (+https://github.com/Azrazieliz/Game-Central-Database)"
 FAC={"蜀":"shu","魏":"wei","吴":"wu","呉":"wu","群":"allied","漢":"han","使":"apostle","星":"star","時":"spacetime"}
 ATTR_BY_COLOR={"#e0563b":"STR","#3fa8e0":"INT","#36c98e":"AGI"}
+# Cross-source identity aliases are adapter data, not display names.  Values are
+# Kaisen Wiki card asset keys (a trailing * means the rarity-specific variant in
+# that Kaisen identity family).  Canonical display names still come only from Kaisen Wiki.
+KAISEN_SOURCE_KEY_ALIASES={
+ "夕":"xi01","運命の反響":"mingyunhuisheng01","ナイヤーラトテップ":"naiyalatuotipu01",
+ "ヨグ・ソトース":"yougesuotuosi01","妹喜":"moxi01","まったり年越し":"youxiankuanianye01",
+ "謹賀新年2025":"jinhexinnian202501","羿":"yi01","シュブ・ニグラス":"shabunigulasi01",
+ "酈食其":"liyiji01","夢の恋人・蔡文姫":"mengzhongrencaiwenji01","甘美な夢境の夏":"gantiandemengjingzhixia01",
+ "グロース":"geheluosi01","楽進":"yuejin*","謹賀新年2024":"xinniankuaile202401",
+ "張苞":"zhangbaoa*","冒涜せし双子":"xiedushuangshengzi01","スターライト":"xingguangyiyi01",
+ "邪魔の祖":"xiemozhizu01","于禁":"yujin*","黄衣の王":"huangyizhiwang01",
+ "ルルイエの主":"luoyanzhizhu01","戯志才":"xizhicai*","哪吒・クーバラ":"nezhajufaluo01",
+ "田豊":"tianfeng*","賈ク":"jiaxu*","真夏の夜のラプソディー":"zhongxiayekuangxiangqu01",
+ "クティーラ":"kexila01","無終没入":"tiehuo01","于吉":"yujia*","虞姫":"yujib*",
+ "張宝":"zhangbaob*","闇火風":"anfenghuo01","時空の主":"shikongzhizhu01",
+ "良いお年":"xinnian01","運命三姉妹":"mingyun01"
+}
 CAT_MARKERS={"通常攻撃":"normal","アクティブスキル":"active","パッシブスキル":"passive","パッシブ":"passive","桜花解放":"release"}
 DESC_MARKERS=("％","%","ダメージ","敵","味方","付与","発動","回復","運命の輪","ターン","攻撃力","HP","落桜","無視","消去","解除","会心","状態異常","上昇","低下","戦闘不能")
 MODE_WEIGHTS={
@@ -345,6 +364,8 @@ def parse_game8_page(sess,item):
     except Exception as e:return {**item,"error":str(e)}
     soup=BeautifulSoup(r.text,"html.parser")
     h1=clean((soup.find("h1") or {}).get_text(" ",strip=True) if soup.find("h1") else item["catalog_name"])
+    if "の評価と基本情報" not in h1:
+        return {**item,"html":r.text,"retrieved_at":retrieved,"h1":h1,"non_character":True}
     rarity=(re.search(r"（(UR[＋+](?:2026)?|UR|SSR|SR|R)）",h1.replace("＋","+")) or [None,None])[1]
     basic=find_basic_table(soup)
     source_name=clean(basic.get("スキン名") or item["catalog_name"])
@@ -378,6 +399,121 @@ def parse_game8_page(sess,item):
     return {**item,"html":r.text,"retrieved_at":retrieved,"h1":h1,"rarity_source":rarity,
       "character_name_source":clean(basic.get("キャラクター名")),"reading":clean(basic.get("読み方")),"skin_name_source":source_name,
       "cv":clean(basic.get("CV")),"skills":skills,"relationships":relationships,"full_art_url":choose_full_art(soup,source_name,rarity)}
+
+def rarity_family(value):
+    v=clean(value).replace("＋","+")
+    return "UR+" if v.startswith("UR+") else v
+
+def kaisen_asset_key(e):
+    stem=clean(e.get("asset_stem"))
+    if not stem:
+        stem=e.get("entity_key","").split(":")[-1]
+    stem=Path(stem).stem
+    return re.sub(r"^herocard_","",stem)
+
+def match_by_kaisen_source_alias(entities,page,excluded_ids=None):
+    excluded=set(excluded_ids or ())
+    labels=[]
+    for v in (page.get("skin_name_source"),page.get("character_name_source"),page.get("catalog_name")):
+        v=clean(v)
+        v=re.sub(r"（(?:UR[＋+]?(?:2026)?|UR|SSR|SR|R)）","",v).strip()
+        if v and v not in labels:labels.append(v)
+    source_rarity=rarity_family(page.get("rarity_source"))
+    for label in labels:
+        rule=KAISEN_SOURCE_KEY_ALIASES.get(label)
+        if not rule:continue
+        prefix=rule[:-1] if rule.endswith("*") else None
+        candidates=[]
+        for e in entities:
+            if e["id"] in excluded:continue
+            key=kaisen_asset_key(e)
+            if prefix is not None:
+                if not key.startswith(prefix):continue
+            elif key!=rule:
+                continue
+            if source_rarity and rarity_family(e.get("rarity_key"))!=source_rarity:continue
+            candidates.append(e)
+        if len(candidates)==1:
+            return candidates[0],1.0,"kaisen_source_alias",{"source_label":label,"kaisen_asset_key":kaisen_asset_key(candidates[0])}
+    return None,0.0,None,None
+
+def load_card_gray(e,assets,cache):
+    if e["id"] in cache:return cache[e["id"]]
+    card=next((x for x in e.get("images",[]) if x.get("asset_type")=="card" or x.get("display_role")=="grid_card"),None)
+    if not card or not card.get("pack_path"):
+        cache[e["id"]]=None;return None
+    path=assets/Path(card["pack_path"]).name
+    if not path.is_file():
+        cache[e["id"]]=None;return None
+    img=cv2.imdecode(np.frombuffer(path.read_bytes(),np.uint8),cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        cache[e["id"]]=None;return None
+    if max(img.shape)>900:
+        scale=900/max(img.shape);img=cv2.resize(img,None,fx=scale,fy=scale,interpolation=cv2.INTER_AREA)
+    sift=cv2.SIFT_create(nfeatures=2200)
+    kp,desc=sift.detectAndCompute(img,None)
+    cache[e["id"]]=(kp,desc);return cache[e["id"]]
+
+def visual_match_kaisen(sess,page,entities,assets,excluded_ids=None,feature_cache=None):
+    url=page.get("full_art_url")
+    if not url:return None,0.0,None
+    try:
+        r=sess.get(url,timeout=45,headers={"Referer":page.get("url") or GAME8_HOME});r.raise_for_status()
+        q=cv2.imdecode(np.frombuffer(r.content,np.uint8),cv2.IMREAD_GRAYSCALE)
+    except Exception:
+        return None,0.0,None
+    if q is None:return None,0.0,None
+    if max(q.shape)>1200:
+        scale=1200/max(q.shape);q=cv2.resize(q,None,fx=scale,fy=scale,interpolation=cv2.INTER_AREA)
+    sift=cv2.SIFT_create(nfeatures=2600);qkp,qdesc=sift.detectAndCompute(q,None)
+    if qdesc is None or len(qkp)<12:return None,0.0,None
+    excluded=set(excluded_ids or ());source_rarity=rarity_family(page.get("rarity_source"));cache=feature_cache if feature_cache is not None else {}
+    bf=cv2.BFMatcher(cv2.NORM_L2);scores=[]
+    for e in entities:
+        if e["id"] in excluded:continue
+        if source_rarity and rarity_family(e.get("rarity_key"))!=source_rarity:continue
+        feat=load_card_gray(e,assets,cache)
+        if not feat:continue
+        ckp,cdesc=feat
+        if cdesc is None or len(ckp)<8:continue
+        try:knn=bf.knnMatch(cdesc,qdesc,k=2)
+        except cv2.error:continue
+        good=[a for a,b in knn if a.distance<0.72*b.distance]
+        if len(good)<4:continue
+        src=np.float32([ckp[m.queryIdx].pt for m in good]).reshape(-1,1,2)
+        dst=np.float32([qkp[m.trainIdx].pt for m in good]).reshape(-1,1,2)
+        try:H,mask=cv2.findHomography(src,dst,cv2.RANSAC,5.0)
+        except cv2.error:H,mask=None,None
+        inliers=int(mask.sum()) if mask is not None else 0
+        ratio=(inliers/len(good)) if good else 0.0
+        scores.append((inliers,ratio,len(good),e))
+    scores.sort(key=lambda x:(x[0],x[1],x[2]),reverse=True)
+    if not scores:return None,0.0,{"reason":"no_visual_candidates"}
+    best=scores[0];second=scores[1] if len(scores)>1 else (0,0,0,None)
+    accepted=(best[0]>=10 and best[1]>=0.45 and (best[0]-second[0]>=4 or best[1]>=0.78)) or (best[0]>=24 and best[1]>=0.30)
+    evidence={"game8_visual_url":url,"inliers":best[0],"inlier_ratio":round(best[1],4),"good_matches":best[2],
+              "runner_up_inliers":second[0],"candidate_name":best[3]["canonical_name"],"candidate_asset_key":kaisen_asset_key(best[3])}
+    if not accepted:return None,0.0,evidence
+    confidence=min(1.0,0.55+best[0]/80+best[1]*0.25)
+    return best[3],confidence,evidence
+
+def apply_game8_page(e,p,confidence,method,matches,raw,identity_evidence=None):
+    alias=clean(p.get("skin_name_source") or p.get("catalog_name"))
+    if alias and alias!=e["canonical_name"] and alias not in e["aliases"]:e["aliases"].append(alias)
+    if p.get("character_name_source") and p["character_name_source"] not in e["aliases"] and p["character_name_source"]!=e["canonical_name"]:e["aliases"].append(p["character_name_source"])
+    if p.get("reading") and p["reading"] not in e["aliases"]:e["aliases"].append(p["reading"])
+    e["attribute_type"]=e.get("attribute_type") or {"筋力":"STR","智力":"INT","知力":"INT","敏捷":"AGI"}.get(p.get("attribute_source"))
+    e["skills"]=p.get("skills") or [];e["relationships"]=p.get("relationships") or []
+    e["source_opinions"].append({"site_name":"Game8","kind":"catalog_roles","value":p.get("roles_source") or [],"source_url":p["url"],"reference_only":True})
+    e["provenance"].append(source_record("Game8",p["url"],p.get("retrieved_at") or now(),"character.kit"))
+    if method and method.startswith("kaisen_"):
+        e["provenance"].append(source_record("Kaisen Wiki",KAISEN_HEROES,now(),"identity.reconciliation"))
+    e["source_urls"]={"kaisen":KAISEN_HEROES,"game8":p["url"]}
+    if p.get("full_art_url"):e["_full_art_url"]=p["full_art_url"]
+    e["identity_resolution"]={"method":method,"confidence":round(float(confidence),4),"evidence":identity_evidence or {}}
+    matches.append({"entity_id":e["id"],"canonical_name":e["canonical_name"],"game8_name":p.get("catalog_name"),"url":p["url"],"confidence":round(float(confidence),3),"method":method,"skills":len(e["skills"]),"identity_evidence":identity_evidence or {}})
+    if p.get("html"):
+        (raw/f"game8-{urlparse(p['url']).path.rsplit('/',1)[-1]}.html").write_text(p["html"],encoding="utf-8")
 
 def match_game8(entities,page,excluded_ids=None):
     excluded_ids=set(excluded_ids or ())
@@ -593,26 +729,31 @@ def main():
         for i,p in enumerate(ex.map(worker,catalog),1):
             pages.append(p)
             if i%40==0:print(f"FETCH {i}/{len(catalog)}",flush=True)
-    byid={e["id"]:e for e in entities};matches=[];unmatched=[];mapped_ids=set()
+    byid={e["id"]:e for e in entities};matches=[];unmatched=[];mapped_ids=set();pending=[];excluded_noncharacters=[]
     for p in pages:
-        if p.get("error"):unmatched.append({"url":p["url"],"name":p["catalog_name"],"reason":p["error"]});continue
-        eid,confidence,method=match_game8(entities,p,mapped_ids)
-        if not eid or eid["id"] in mapped_ids:
-            unmatched.append({"url":p["url"],"name":p["catalog_name"],"best_score":round(confidence,3),"reason":"unmatched_or_duplicate"});continue
-        mapped_ids.add(eid["id"]);e=eid
-        alias=clean(p.get("skin_name_source") or p["catalog_name"])
-        if alias and alias!=e["canonical_name"]:e["aliases"].append(alias)
-        if p.get("character_name_source") and p["character_name_source"] not in e["aliases"] and p["character_name_source"]!=e["canonical_name"]:e["aliases"].append(p["character_name_source"])
-        if p.get("reading"):e["aliases"].append(p["reading"])
-        e["attribute_type"]=e.get("attribute_type") or {"筋力":"STR","智力":"INT","知力":"INT","敏捷":"AGI"}.get(p.get("attribute_source"))
-        e["skills"]=p["skills"];e["relationships"]=p["relationships"]
-        e["source_opinions"].append({"site_name":"Game8","kind":"catalog_roles","value":p.get("roles_source") or [],"source_url":p["url"],"reference_only":True})
-        e["provenance"].append(source_record("Game8",p["url"],p["retrieved_at"],"character.kit"))
-        e["source_urls"]={"kaisen":KAISEN_HEROES,"game8":p["url"]}
-        if p.get("full_art_url"):e["_full_art_url"]=p["full_art_url"]
-        matches.append({"entity_id":e["id"],"canonical_name":e["canonical_name"],"game8_name":p["catalog_name"],"url":p["url"],"confidence":round(confidence,3),"method":method,"skills":len(e["skills"])})
-        (raw/f"game8-{urlparse(p['url']).path.rsplit('/',1)[-1]}.html").write_text(p["html"],encoding="utf-8")
-    print(json.dumps({"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_fetched":len(pages),"mapped":len(matches),"unmatched":len(unmatched),"with_skills":sum(bool(e["skills"]) for e in entities)},ensure_ascii=False),flush=True)
+        if p.get("error"):
+            unmatched.append({"url":p["url"],"name":p.get("catalog_name"),"reason":p["error"]});continue
+        if p.get("non_character"):
+            excluded_noncharacters.append({"url":p["url"],"label":p.get("catalog_name"),"h1":p.get("h1"),"reason":"non_character_page"});continue
+        e,confidence,method,evidence=match_by_kaisen_source_alias(entities,p,mapped_ids)
+        if not e:
+            e,confidence,method=match_game8(entities,p,mapped_ids);evidence=None
+        if e and e["id"] not in mapped_ids:
+            mapped_ids.add(e["id"]);apply_game8_page(e,p,confidence,method,matches,raw,evidence);continue
+        pending.append((p,confidence))
+
+    # Final source-backed reconciliation: compare the Game8 character illustration
+    # against Kaisen Wiki card art.  Kaisen remains the identity/name authority.
+    feature_cache={};still_pending=[]
+    for idx,(p,text_score) in enumerate(pending,1):
+        e,confidence,evidence=visual_match_kaisen(session(),p,entities,assets,mapped_ids,feature_cache)
+        if e and e["id"] not in mapped_ids:
+            mapped_ids.add(e["id"]);apply_game8_page(e,p,confidence,"kaisen_visual_match",matches,raw,evidence)
+        else:
+            still_pending.append({"url":p["url"],"name":p.get("catalog_name"),"rarity":p.get("rarity_source"),"best_text_score":round(float(text_score or 0),3),"reason":"no_supported_kaisen_identity","visual_evidence":evidence or {}})
+        if idx%10==0:print(f"IDENTITY_VISUAL {idx}/{len(pending)}",flush=True)
+    unmatched.extend(still_pending)
+    print(json.dumps({"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_fetched":len(pages),"mapped":len(matches),"unmatched":len(unmatched),"excluded_noncharacters":len(excluded_noncharacters),"with_skills":sum(bool(e["skills"]) for e in entities)},ensure_ascii=False),flush=True)
     # visuals: the validated baseline already carries card tiles. Download Game8
     # detail art concurrently so the build does not serialize hundreds of image requests.
     for e in entities:
@@ -647,12 +788,12 @@ def main():
     for mode in MODE_WEIGHTS:
         rows=[{"entity_id":e["id"],"name":e["canonical_name"],"tier":a["tier_label"],"rank_order":a["rank_order"],"score":a["total_score"]} for e in entities for a in e["analysis"] if a["mode_key"]==mode and a["tier_label"]!="UNRANKED"]
         tiers.append({"ranking_key":"codex_analytical","mode_key":mode,"source_tiers_used":False,"entries":sorted(rows,key=lambda x:x["rank_order"] or 10**9)})
-    report={"generated_at":generated,"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_mapped":len(matches),"game8_unmatched":len(unmatched),"characters_with_normalized_skills":sum(bool(e["skills"]) for e in entities),"characters_ranked":sum(any(a["tier_label"]!="UNRANKED" for a in e["analysis"]) for e in entities),"characters_with_full_art":sum(any(i["asset_type"]=="full_art" for i in e["images"]) for e in entities),"source_tiers_used_for_analysis":False,"unmatched":unmatched[:200]}
-    cat={"generated_at":generated,"engine_version":"0.6.0","games":[{"id":1,"game_key":"shoujo_kaisen","name":"Shoujo Kaisen","adapter_key":"shoujo_kaisen","icon_path":icon,"character_count":len(entities),"data_report":report}],"patches":[],"entities":entities,"unresolved_entity_count":len(unmatched),"unresolved_entities":unmatched,"compatibility":edges,"tier_lists":tiers,"roster_accounts":[],"source_manifest":[source_record("Kaisen Wiki",KAISEN_HEROES,kret,"character.catalog"),source_record("Game8",GAME8_CATALOG,gret,"character.catalog")],"analysis_policy":{"source_tier_inputs":False,"ranking_basis":"normalized kits only","modes":list(MODE_WEIGHTS)}}
+    report={"generated_at":generated,"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_mapped":len(matches),"game8_unmatched":len(unmatched),"non_character_pages_excluded":len(excluded_noncharacters),"characters_with_normalized_skills":sum(bool(e["skills"]) for e in entities),"characters_ranked":sum(any(a["tier_label"]!="UNRANKED" for a in e["analysis"]) for e in entities),"characters_with_full_art":sum(any(i["asset_type"]=="full_art" for i in e["images"]) for e in entities),"source_tiers_used_for_analysis":False,"unmatched":unmatched[:200],"excluded_noncharacters":excluded_noncharacters}
+    cat={"generated_at":generated,"engine_version":"0.6.1","games":[{"id":1,"game_key":"shoujo_kaisen","name":"Shoujo Kaisen","adapter_key":"shoujo_kaisen","icon_path":icon,"character_count":len(entities),"data_report":report}],"patches":[],"entities":entities,"unresolved_entity_count":len(unmatched),"unresolved_entities":unmatched,"compatibility":edges,"tier_lists":tiers,"roster_accounts":[],"source_manifest":[source_record("Kaisen Wiki",KAISEN_HEROES,kret,"character.catalog"),source_record("Game8",GAME8_CATALOG,gret,"character.catalog")],"analysis_policy":{"source_tier_inputs":False,"ranking_basis":"normalized kits only","modes":list(MODE_WEIGHTS)}}
     (data/"catalog.json").write_text(json.dumps(cat,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
     (data/"catalog.js").write_text("window.CODEX_CATALOG="+json.dumps(cat,ensure_ascii=False,separators=(",",":"))+";",encoding="utf-8")
     (out/"source-sync-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
-    (out/"identity-match-report.json").write_text(json.dumps({"matched":matches,"unmatched":unmatched},ensure_ascii=False,indent=2),encoding="utf-8")
+    (out/"identity-match-report.json").write_text(json.dumps({"matched":matches,"unmatched":unmatched,"excluded_noncharacters":excluded_noncharacters},ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps(report,ensure_ascii=False),flush=True)
     if report["characters_with_normalized_skills"]<120:
         raise SystemExit("Too few normalized kits; refusing data-complete build")
