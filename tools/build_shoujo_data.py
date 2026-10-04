@@ -119,7 +119,10 @@ def parse_kaisen(sess):
 
 def parse_game8_catalog(sess):
     retrieved=now(); r=fetch(sess,GAME8_CATALOG); soup=BeautifulSoup(r.text,"html.parser")
-    rows=[]; seen=set()
+    # Game8 occasionally leaves a stale duplicate URL in the first row while the
+    # following row has the correct current character for that URL. Keep the last
+    # table row per URL, then supplement current featured-character links.
+    by_url={}
     for tr in soup.find_all("tr"):
         link=tr.find("a",href=re.compile(r"^/shoujokaisen/\d+$|^https://game8\.jp/shoujokaisen/\d+$"))
         if not link: continue
@@ -128,13 +131,23 @@ def parse_game8_catalog(sess):
         attr=next((x for x in ("敏捷","筋力","智力","知力") if x in alts),None)
         if not attr: continue
         url=urljoin(GAME8_CATALOG,link.get("href"))
-        if url in seen: continue
-        seen.add(url)
         name=clean(link.get_text(" ",strip=True))
         rowtext=clean(tr.get_text(" ",strip=True))
         roles=[x for x in ("アタッカー","サポーター","サポート","タンク","コントロール") if x in rowtext]
         faction=next((f for f in ("時","群","漢","蜀","魏","呉","吴","星") if re.search(rf"(?:^|\s){re.escape(f)}(?:\s|$)",rowtext)),None)
-        rows.append({"url":url,"catalog_name":name,"attribute_source":attr,"roles_source":list(dict.fromkeys(roles)),"faction_source":faction})
+        by_url[url]={"url":url,"catalog_name":name,"attribute_source":attr,"roles_source":list(dict.fromkeys(roles)),"faction_source":faction}
+    # Newly announced units can appear in the announcement before the main table
+    # has been repaired. These are character-page links and should still be ingested.
+    announce=soup.select_one(".a-announce")
+    if announce:
+        for a in announce.find_all("a",href=True):
+            label=clean(a.get_text(" ",strip=True))
+            m=re.search(r"最新武将「(.+?)」",label)
+            url=urljoin(GAME8_CATALOG,a["href"])
+            if m and re.search(r"/shoujokaisen/\d+$",urlparse(url).path):
+                nm=re.sub(r"（(?:UR[＋+](?:2026)?|UR|SSR|SR|R)）","",m.group(1)).strip()
+                by_url[url]={"url":url,"catalog_name":nm,"attribute_source":None,"roles_source":[],"faction_source":None}
+    rows=list(by_url.values())
     if len(rows)<150: raise RuntimeError(f"Game8 catalogue parse suspiciously small: {len(rows)}")
     return rows,r.text,retrieved
 
@@ -152,8 +165,31 @@ def looks_desc(s):
 def parse_skills_dom(soup):
     skill_h2=next((h for h in soup.find_all("h2") if clean(h.get_text(" ",strip=True)).endswith("のスキル")),None)
     if not skill_h2:return []
-    skills=[];cat=None;current=None;parts=[];ordinal=0
+    skills=[];cat=None;ordinal=0
+    node=skill_h2.next_sibling
+    while node:
+        if isinstance(node,Tag) and node.name=="h2":break
+        if isinstance(node,Tag) and node.name=="h3":
+            cat=CAT_MARKERS.get(clean(node.get_text(" ",strip=True)),cat)
+        elif isinstance(node,Tag) and node.name=="table" and cat:
+            names=[clean(x.get_text(" ",strip=True)) for x in node.find_all("th")]
+            descs=[clean(x.get_text(" ",strip=True)) for x in node.find_all("td")]
+            names=[x for x in names if x]
+            descs=[x for x in descs if x]
+            if names and descs:
+                pairs=list(zip(names,descs)) if len(names)==len(descs) else [(names[0],clean(" ".join(descs)))]
+                for name,desc in pairs:
+                    # Strip decorative leading/trailing metadata but keep the sourced prose.
+                    name=re.sub(r"^[・\s]+|[・\s]+$","",name)
+                    if name and looks_desc(desc):
+                        skills.append({"skill_key":f"{cat}.{ordinal}","name":name,"skill_type":cat,"description_source":desc})
+                        ordinal+=1
+        node=node.next_sibling
+    if skills:
+        return skills
 
+    # Fallback for uncommon legacy layouts without skill tables.
+    cat=None;current=None;parts=[]
     def finish():
         nonlocal current,parts,ordinal
         if not current:return
@@ -162,25 +198,17 @@ def parse_skills_dom(soup):
             skills.append({"skill_key":f"{cat or 'unknown'}.{ordinal}","name":current,"skill_type":cat or "unknown","description_source":desc})
             ordinal+=1
         current=None;parts=[]
-
     for node in skill_h2.next_elements:
         if isinstance(node,Tag) and node is not skill_h2 and node.name=="h2":
             finish();break
         if isinstance(node,Tag) and node.name=="h3":
-            finish()
-            heading=clean(node.get_text(" ",strip=True))
-            cat=CAT_MARKERS.get(heading,cat)
-            continue
+            finish();cat=CAT_MARKERS.get(clean(node.get_text(" ",strip=True)),cat);continue
         if isinstance(node,Tag) and node.name=="img":
             alt=clean(node.get("alt"))
             if alt.endswith("のアイコン"):
-                finish()
-                current=alt[:-len("のアイコン")].strip()
-                parts=[]
+                finish();current=alt[:-len("のアイコン")].strip();parts=[]
             continue
         if isinstance(node,NavigableString) and current:
-            # Heading and image-alt text are handled structurally; only retain actual
-            # prose after the skill marker.
             if node.find_parent(["h2","h3"]):continue
             t=clean(str(node))
             if not t or t in {"---",current} or t.endswith("のアイコン"):continue
@@ -321,6 +349,10 @@ def parse_game8_page(sess,item):
     basic=find_basic_table(soup)
     source_name=clean(basic.get("スキン名") or item["catalog_name"])
     source_name=re.sub(r"（(?:UR[＋+](?:2026)?|UR|SSR|SR|R)）","",source_name).strip()
+    if item.get("catalog_name") and source_name:
+        similarity=SequenceMatcher(None,romanize(item["catalog_name"]),romanize(source_name)).ratio()
+        if similarity < 0.72:
+            item={**item,"roles_source":[],"attribute_source":None,"faction_source":None}
     lines=lines_between(soup,r"のスキル$",r"の絆$")
     skills=parse_skills_dom(soup)
     for s in skills:s["versions"]=[{"effects":normalize_effects(s["description_source"])}]
