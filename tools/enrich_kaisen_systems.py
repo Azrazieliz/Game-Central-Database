@@ -551,7 +551,11 @@ def compute_rankings(entities,subs):
             for pos,(score,e,factors) in enumerate(scored,1):
                 p=1-(pos-1)/(n-1) if n>1 else 1;loadout=chosen[e["id"]] if profile=="optimized_subsystems" else None
                 evidence={"formula_version":"kaisen-system-scaling-v1","source_tiers_used":False,"profile":profile,"loadout":loadout,"scaling_notes":["Percent/stat effects are parsed from sourced kit/subsystem descriptions.","Flat +Lv effects are retained as evidence but excluded from percentage scaling when level/base-stat context is unavailable.","Optimized profile selects compatible Soul → Martial Spirit → Mount slot-by-slot using the same mode score, records every selected item, then reranks the resulting mechanic vectors across the population.","Mount compatibility is treated as universal only because current Kaisen mount detail exposes no per-character restriction; this assumption is recorded on every mount."]}
-                e["analysis"].append({"ranking_key":"codex_analytical","title":f"Codex analytical tier — {mode} — {profile}","mode_key":mode,"profile_key":profile,"tier_label":tier(p),"rank_order":pos,"total_score":round(score,3),"percentile":round(p,6),"confidence":round(min(1.0,0.55+len(e.get('skills',[]))/12),3),"factors_json":json.dumps(factors,ensure_ascii=False),"evidence_json":json.dumps(evidence,ensure_ascii=False),"selected_subsystems":loadout["subsystems"] if loadout else [],"source_tiers_used":False})
+                skill_rows=e.get("skills",[]) or []
+                parsed_skill_count=sum(1 for s in skill_rows if any(v.get("effects") for v in s.get("versions",[]) or []))
+                skill_coverage=parsed_skill_count/max(1,len(skill_rows))
+                confidence=min(1.0,0.25+0.65*skill_coverage+0.10*min(parsed_skill_count,8)/8)
+                e["analysis"].append({"ranking_key":"codex_analytical","title":f"Experimental Codex analysis — {mode} — {profile}","analysis_status":"experimental","mode_key":mode,"profile_key":profile,"tier_label":tier(p),"rank_order":pos,"total_score":round(score,3),"percentile":round(p,6),"confidence":round(confidence,3),"factors_json":json.dumps(factors,ensure_ascii=False),"evidence_json":json.dumps(evidence,ensure_ascii=False),"selected_subsystems":loadout["subsystems"] if loadout else [],"source_tiers_used":False})
                 rows.append({"entity_id":e["id"],"name":e["canonical_name"],"tier":tier(p),"rank_order":pos,"score":round(score,3),"profile_key":profile,"selected_subsystems":loadout["subsystems"] if loadout else []})
             result_lists.append({"ranking_key":"codex_analytical","mode_key":mode,"profile_key":profile,"source_tiers_used":False,"entries":rows})
     for e in entities:
@@ -573,14 +577,20 @@ def enrich_hero(e,detail,assets):
         bonds.append({"relationship_type":"bond","bond_id":b.get("id"),"name":clean(b.get("name")),"members":b.get("members") or [],"buffs":b.get("buffs") or [],"source_site":"Kaisen Wiki","source_url":api})
     e["relationships"]=(e.get("relationships") or [])+bonds
     e.setdefault("provenance",[]).append(source("Kaisen Wiki",api,"character.detail",retr))
-    has_full=any(x.get("asset_type")=="full_art" for x in e.get("images",[]))
-    if not has_full:
+    # Prefer a Kaisen-native full illustration over a Game8/in-game capture when
+    # the detail API exposes one. Existing source art remains as an alternate.
+    has_kaisen_full=any(x.get("asset_type")=="full_art" and x.get("source_site")=="Kaisen Wiki" for x in e.get("images",[]))
+    if not has_kaisen_full:
         for j,path in enumerate(detail.get("images") or []):
             try:m=save_asset(asset_url(path),assets,f"{hero_key(e)}-kaisen-full-{j}",1600)
             except Exception:m=None
             if m and m.get("height",1)>=m.get("width",1):
-                e.setdefault("images",[]).append({"id":e["id"]*100+50+j,"image_key":f"kaisen-{hero_key(e)}-full-{j}","asset_type":"full_art","display_role":"detail_primary" if j==0 else "alternate_full_art","priority":120-j,"source_site":"Kaisen Wiki",**m})
-                if j==0:break
+                for old in e.get("images",[]):
+                    if old.get("display_role")=="detail_primary":
+                        old["display_role"]="alternate_full_art"
+                        old["priority"]=min(int(old.get("priority") or 100),100)
+                e.setdefault("images",[]).append({"id":e["id"]*100+50+j,"image_key":f"kaisen-{hero_key(e)}-full-{j}","asset_type":"full_art","display_role":"detail_primary","priority":160,"source_site":"Kaisen Wiki",**m})
+                break
     return len(ks)
 
 
