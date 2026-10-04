@@ -19,10 +19,9 @@ These are durable project rules and supersede implementation shortcuts.
 - Game8 Japanese names are aliases/source identities used for matching/provenance, not canonical display names.
 - Never invent an English translation when Kaisen Wiki itself does not provide one.
 
-## Character visuals
-- Every character-capable game adapter must provide a visual-first database experience adapted to that game's asset types.
+## Navigation / scale\n- The app opens on a top-level Android-like game library screen. Each game is a clickable icon/tile that opens that game's own database. Do not put every supported game's characters into one global browser by default.\n- Game-specific filters, search, roster state and analysis live inside the selected game's database.\n\n## Character visuals\n- Every character-capable game adapter must provide a visual-first database experience adapted to that game's asset types.
 - Character card/portrait visuals are the clickable database tiles.
-- A tile opens the character detail page, which prefers full art/splash and exposes alternate visuals plus the complete character record.
+- A tile opens the character detail page, which uses a true full character illustration/splash when available and exposes alternate visuals plus the complete character record. A borderless/cropped card image is still a card asset and must never be relabeled or silently reused as the character's full visual.
 - Assets retain source/provenance and can be cached offline.
 - The same visual-first rule applies to every future game adapter.
 
