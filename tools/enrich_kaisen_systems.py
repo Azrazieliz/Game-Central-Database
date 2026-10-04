@@ -303,10 +303,19 @@ def normalize_japanese(text):
 
 
 def normalize_source_text(text):
-    effects=normalize_english(text)
-    if not effects and re.search(r"[ぁ-んァ-ヶ一-龯]",clean(text)):
-        effects=normalize_japanese(text)
-    return effects
+    raw=clean(text)
+    effects=list(normalize_english(raw))
+    # Kaisen skill text can be mixed: English stat passives plus Japanese active/passive
+    # mechanics on the same hero.  Japanese normalization must therefore run whenever
+    # Japanese is present, not only when the English parser returned nothing.
+    if re.search(r"[ぁ-んァ-ヶ一-龯]",raw):
+        effects.extend(normalize_japanese(raw))
+    ded=[];seen=set()
+    for e in effects:
+        key=(e.get("effect_type"),e.get("mechanic_key"),json.dumps(e.get("target") or {},sort_keys=True),json.dumps(e.get("magnitude") or {},sort_keys=True),json.dumps(e.get("condition") or {},sort_keys=True),clean((e.get("extension") or {}).get("source_sentence")))
+        if key not in seen:
+            seen.add(key);ded.append(e)
+    return ded
 
 
 def skill_type_from_api(skill):
