@@ -8,15 +8,11 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.view.Gravity;
-import android.view.View;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.BufferedInputStream;
@@ -39,62 +35,22 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(Color.rgb(7, 10, 16));
+        getWindow().setNavigationBarColor(Color.rgb(7, 10, 16));
+
         codexDir = new File(getFilesDir(), "codex");
         try {
             ensureBundledCodex();
         } catch (IOException e) {
             Toast.makeText(this, "Failed to initialize Codex: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
-        setContentView(buildUi());
-        configureWebView();
-        loadCodex();
-    }
-
-    private View buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(11, 13, 17));
-
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(12), dp(6), dp(8), dp(6));
-        bar.setBackgroundColor(Color.rgb(11, 13, 17));
-
-        TextView title = new TextView(this);
-        title.setText("Game Codex");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(null, 1);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        bar.addView(title, titleParams);
-
-        Button importButton = topButton("Import pack");
-        importButton.setOnClickListener(v -> choosePack());
-        bar.addView(importButton);
-
-        Button moreButton = topButton("⋮");
-        moreButton.setOnClickListener(v -> showActions());
-        bar.addView(moreButton);
 
         webView = new WebView(this);
-        root.addView(bar, new LinearLayout.LayoutParams(-1, dp(56)));
-        root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1f));
-        return root;
-    }
-
-    private Button topButton(String text) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setTextColor(Color.WHITE);
-        b.setAllCaps(false);
-        b.setTextSize(12);
-        b.setBackgroundColor(Color.rgb(24, 29, 39));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(42));
-        lp.setMargins(dp(5), 0, 0, 0);
-        b.setLayoutParams(lp);
-        return b;
+        webView.setBackgroundColor(Color.rgb(7, 10, 16));
+        webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
+        setContentView(webView);
+        configureWebView();
+        loadCodex();
     }
 
     private void configureWebView() {
@@ -105,11 +61,13 @@ public class MainActivity extends Activity {
         s.setAllowContentAccess(true);
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
+        s.setSupportZoom(false);
+        s.setTextZoom(100);
         s.setAllowFileAccessFromFileURLs(true);
         s.setAllowUniversalAccessFromFileURLs(true);
-        webView.setBackgroundColor(Color.rgb(11, 13, 17));
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient());
+        webView.addJavascriptInterface(new CodexBridge(), "AndroidCodex");
     }
 
     private void loadCodex() {
@@ -121,23 +79,35 @@ public class MainActivity extends Activity {
         webView.loadUrl(Uri.fromFile(index).toString());
     }
 
-    private void showActions() {
-        new AlertDialog.Builder(this)
-                .setTitle("Game Codex")
-                .setItems(new String[]{"Reload", "Restore bundled database", "App information"}, (dialog, which) -> {
-                    if (which == 0) loadCodex();
-                    if (which == 1) confirmRestore();
-                    if (which == 2) {
-                        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
-                        startActivity(i);
-                    }
-                }).show();
+    public final class CodexBridge {
+        @JavascriptInterface
+        public void choosePack() {
+            runOnUiThread(() -> MainActivity.this.choosePack());
+        }
+
+        @JavascriptInterface
+        public void restoreBundledPack() {
+            runOnUiThread(() -> MainActivity.this.confirmRestore());
+        }
+
+        @JavascriptInterface
+        public void reload() {
+            runOnUiThread(() -> MainActivity.this.loadCodex());
+        }
+
+        @JavascriptInterface
+        public void appInfo() {
+            runOnUiThread(() -> {
+                Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+                startActivity(i);
+            });
+        }
     }
 
     private void confirmRestore() {
         new AlertDialog.Builder(this)
                 .setTitle("Restore bundled database?")
-                .setMessage("This replaces the currently imported local Codex pack with the one bundled in this APK.")
+                .setMessage("This replaces the currently imported local Codex pack.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Restore", (d, w) -> {
                     try {
@@ -178,7 +148,7 @@ public class MainActivity extends Activity {
                 copyTree(replacement, codexDir);
                 deleteTree(replacement);
             }
-            Toast.makeText(this, "Codex pack imported", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Codex database updated", Toast.LENGTH_SHORT).show();
             loadCodex();
         } catch (Exception e) {
             Toast.makeText(this, "Import failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
@@ -222,14 +192,14 @@ public class MainActivity extends Activity {
     }
 
     private void validatePack(File root) throws IOException {
-        if (!new File(root, "index.html").isFile()) throw new IOException("Not a Game Codex portable pack (index.html missing)");
+        if (!new File(root, "index.html").isFile()) throw new IOException("Not a Game Codex portable pack");
         if (!new File(root, "data/catalog.json").isFile() && !new File(root, "data/catalog.js").isFile())
-            throw new IOException("Not a Game Codex portable pack (catalog missing)");
+            throw new IOException("Game Codex catalog missing");
     }
 
     private void ensureBundledCodex() throws IOException {
-        File marker = new File(codexDir, ".bundled-v5");
-        if (!new File(codexDir, "index.html").isFile()) {
+        File marker = new File(codexDir, ".bundled-v8");
+        if (!new File(codexDir, "index.html").isFile() || !marker.exists()) {
             deleteTree(codexDir);
             copyAssetTree("codex", codexDir);
             prepareCatalogJs(codexDir);
@@ -262,14 +232,6 @@ public class MainActivity extends Activity {
             String body = new String(Files.readAllBytes(json.toPath()), StandardCharsets.UTF_8);
             Files.write(js.toPath(), ("window.CODEX_CATALOG=" + body + ";").getBytes(StandardCharsets.UTF_8));
         }
-        File index = new File(root, "index.html");
-        if (index.isFile()) {
-            String html = new String(Files.readAllBytes(index.toPath()), StandardCharsets.UTF_8);
-            if (!html.contains("data/catalog.js")) {
-                html = html.replace("<script src=\"app.js\"></script>", "<script src=\"data/catalog.js\"></script>\n<script src=\"app.js\"></script>");
-                Files.write(index.toPath(), html.getBytes(StandardCharsets.UTF_8));
-            }
-        }
     }
 
     private static void copyTree(File src, File dst) throws IOException {
@@ -297,20 +259,10 @@ public class MainActivity extends Activity {
         if (!file.delete()) throw new IOException("Cannot delete " + file);
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
     @Override
     public void onBackPressed() {
-        webView.evaluateJavascript("location.hash", value -> {
-            if (value != null && value.length() > 2 && !value.equals("\"\"")) {
-                webView.evaluateJavascript("location.hash=''", null);
-            } else if (webView.canGoBack()) {
-                webView.goBack();
-            } else {
-                MainActivity.super.onBackPressed();
-            }
+        webView.evaluateJavascript("(window.codexBack&&window.codexBack())?'handled':'exit'", value -> {
+            if (value == null || value.contains("exit")) MainActivity.super.onBackPressed();
         });
     }
 }
