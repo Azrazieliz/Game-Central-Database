@@ -347,7 +347,8 @@ def parse_game8_page(sess,item):
       "character_name_source":clean(basic.get("キャラクター名")),"reading":clean(basic.get("読み方")),"skin_name_source":source_name,
       "cv":clean(basic.get("CV")),"skills":skills,"relationships":relationships,"full_art_url":choose_full_art(soup,source_name,rarity)}
 
-def match_game8(entities,page,excluded_ids=None):\n    excluded_ids=set(excluded_ids or ())
+def match_game8(entities,page,excluded_ids=None):
+    excluded_ids=set(excluded_ids or ())
     keys=set()
     for v in (page.get("catalog_name"),page.get("skin_name_source"),page.get("character_name_source")):
         if v:
@@ -355,11 +356,17 @@ def match_game8(entities,page,excluded_ids=None):\n    excluded_ids=set(excluded
     keys={k for k in keys if len(k)>=3}
     direct=[]
     for e in entities:
+        if e["id"] in excluded_ids:
+            continue
         nc=norm_ascii(e["canonical_name"])
-        if nc in keys:direct.append((1.0,e))
-    if len(direct)==1:return direct[0][1],1.0,"direct"
+        if nc in keys:
+            direct.append((1.0,e))
+    if len(direct)==1:
+        return direct[0][1],1.0,"direct"
     scores=[]
     for e in entities:
+        if e["id"] in excluded_ids:
+            continue
         ek=e["match_key"]
         best=0.0
         for k in keys:
@@ -371,9 +378,12 @@ def match_game8(entities,page,excluded_ids=None):\n    excluded_ids=set(excluded
             best-=0.08
         scores.append((best,e))
     scores.sort(key=lambda x:x[0],reverse=True)
-    if not scores:return None,0,"none"
-    best,e=scores[0]; second=scores[1][0] if len(scores)>1 else 0
-    if best>=0.82 and best-second>=0.035:return e,best,"romanized"
+    if not scores:
+        return None,0,"none"
+    best,e=scores[0]
+    second=scores[1][0] if len(scores)>1 else 0
+    if best>=0.82 and best-second>=0.035:
+        return e,best,"romanized"
     return None,best,"ambiguous"
 
 def save_image(sess,url,outdir,key,max_dim=None,referer=None):
