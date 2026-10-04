@@ -26,7 +26,7 @@ def build_display_names(entities):
     for e in entities:
         raw=(e.get("canonical_name") or "").strip();base=bases.get(family_key(e));display=raw
         if raw.lower() in BAD_DISPLAY_NAMES and base:
-            display=f"{base} — {raw}"
+            display=base
         elif raw and not latin_name(raw) and base:
             display=base
         if display!=raw:
