@@ -1,1 +1,2 @@
 validate fast Kaisen subsystem scaling 2026-10-04
+parser-fix-122792b
