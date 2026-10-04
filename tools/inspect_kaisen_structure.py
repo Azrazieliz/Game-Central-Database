@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import urllib.request
+import urllib.request, re
 BASE="https://kaisen-wiki.h0rny.net"
 UA="GameCodex/0.5 (+https://github.com/Azrazieliz/Game-Central-Database)"
 targets={
@@ -20,3 +20,21 @@ for name,url in targets.items():
         print("INSPECT_SAVED",name,len(body),url)
     except Exception as exc:
         print("INSPECT_FAILED",name,url,repr(exc))
+
+# Fetch the exact album page bundle named by the current HTML.
+hero_path=out/"hero-huamulan.html"
+if hero_path.is_file():
+    text=hero_path.read_text(encoding="utf-8")
+    for src in re.findall(r'<script[^>]+src="([^"]+page-[^"]+\.js)"',text):
+        if "/(album)/" not in src and "%28album%29" not in src:
+            continue
+        try:
+            url=BASE+src if src.startswith("/") else src
+            req=urllib.request.Request(url,headers={"User-Agent":UA,"Accept":"*/*"})
+            with urllib.request.urlopen(req,timeout=30) as r:
+                body=r.read()
+            (out/"album-page.js").write_bytes(body)
+            print("INSPECT_SAVED","album-page.js",len(body),url)
+            break
+        except Exception as exc:
+            print("INSPECT_FAILED","album-page.js",url,repr(exc))
