@@ -71,6 +71,13 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.6.0.zip > Game-Codex-Shoujo-Kaisen-pack-v0.6.0.sha256
 
+      - name: Trim pack-builder files from APK payload
+        run: |
+          rm -rf android/app/src/main/assets/codex/raw
+          rm -f android/app/src/main/assets/codex/data/catalog.json
+          rm -f android/app/src/main/assets/codex/identity-match-report.json
+          rm -f android/app/src/main/assets/codex/source-sync-report.json
+
       - name: Build debug APK
         run: gradle -p android :app:assembleDebug --stacktrace
 
