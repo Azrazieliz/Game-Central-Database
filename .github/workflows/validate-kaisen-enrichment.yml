@@ -1,0 +1,57 @@
+name: Validate Kaisen Enrichment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'enrichment_trigger/**'
+      - '.github/workflows/validate-kaisen-enrichment.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet beautifulsoup4 pillow
+      - name: Restore v0.6.3 portable pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ART_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=game-codex-shoujo-kaisen-pack-v0.6.3&per_page=100" --jq '.artifacts | map(select(.expired==false)) | sort_by(.created_at) | last | .id')
+          test -n "$ART_ID"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ART_ID}/zip" > outer.zip
+          mkdir outer pack
+          unzip -q outer.zip -d outer
+          unzip -q outer/Game-Codex-Shoujo-Kaisen-pack-v0.6.3.zip -d pack
+      - name: Enrich from Kaisen Wiki API
+        run: |
+          python3 tools/enrich_kaisen_systems.py --out pack/codex --workers 8
+          cat pack/codex/kaisen-system-enrichment-report.json
+      - name: Verify invariants
+        run: |
+          python3 - <<'PY'
+          import json
+          c=json.load(open('pack/codex/data/catalog.json'))
+          r=json.load(open('pack/codex/kaisen-system-enrichment-report.json'))
+          assert r['hero_detail_api_success'] >= 520, r
+          assert r['souls_logical_sets'] >= 20, r
+          assert r['martial_spirits'] >= 50, r
+          assert r['mounts'] >= 10, r
+          assert r['source_tiers_used_for_analysis'] is False
+          h=next(e for e in c['entities'] if e['canonical_name']=='Hua Mulan')
+          assert len(h['skills']) >= 6
+          assert any(a.get('profile_key')=='optimized_subsystems' for a in h['analysis'])
+          assert c.get('subsystems')
+          print('VALIDATED',r)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kaisen-enrichment-validation
+          path: |
+            pack/codex/kaisen-system-enrichment-report.json
+            pack/codex/data/catalog.json
+          if-no-files-found: error
