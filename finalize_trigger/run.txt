@@ -5,3 +5,4 @@ v0.8.0-final-mobile-ui
 v0.8.0-fast-art-final
 v0.8.0-hide-source-errors
 v0.8.0-no-redundant-art-recrawl
+v0.8.0-k-title-base-name
