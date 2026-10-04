@@ -1,0 +1,23 @@
+name: Inspect Kaisen Sources
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'research_trigger/**'
+      - '.github/workflows/inspect-kaisen.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture source HTML
+        run: python3 tools/inspect_kaisen_structure.py
+      - name: List captures
+        run: find android/app/src/main/assets/codex/research -type f -maxdepth 1 -printf '%f %s bytes\n' || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kaisen-source-inspection
+          path: android/app/src/main/assets/codex/research
+          if-no-files-found: error
