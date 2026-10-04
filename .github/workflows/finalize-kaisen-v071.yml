@@ -45,9 +45,6 @@ jobs:
       - name: Normalize presentation data and rerank
         run: |
           python3 tools/postprocess_kaisen_catalog.py --out work/codex
-      - name: Refresh Kaisen-native detail artwork
-        run: |
-          python3 tools/refresh_kaisen_art.py --out work/codex --workers 24
       - name: Validate data presentation boundaries
         run: |
           python3 - <<'PY'
@@ -61,6 +58,8 @@ jobs:
           assert r['mounts'] == 14, r
           assert r['source_tiers_used_for_analysis'] is False
           assert c['analysis_policy']['status'] == 'experimental'
+          full_count=sum(any(x.get('asset_type')=='full_art' for x in e.get('images',[])) for e in c['entities'])
+          assert full_count >= 500, full_count
           broken=next(e for e in c['entities'] if e['canonical_name']=='Action failed')
           assert broken.get('display_name') == 'Wen Zhong', broken
           abyss=next(e for e in c['entities'] if e['canonical_name']=='Abyss - The Last Apostle')
@@ -114,7 +113,6 @@ jobs:
           rm -f android/app/src/main/assets/codex/identity-match-report.json
           rm -f android/app/src/main/assets/codex/source-sync-report.json
           rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
-          rm -f android/app/src/main/assets/codex/kaisen-art-refresh-report.json
           sed -E -i "s/versionCode [0-9]+/versionCode 20/" android/app/build.gradle
           sed -E -i "s/versionName '[^']+'/versionName '0.8.0'/" android/app/build.gradle
       - name: Build APK
