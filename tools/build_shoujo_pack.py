@@ -80,6 +80,15 @@ def main():
         print('KAISEN_HTML_SAMPLE_BEGIN')
         print(sample)
         print('KAISEN_HTML_SAMPLE_END')
+        full=body.decode('utf-8','replace')
+        print('KAISEN_ASSET_TOKEN_COUNT', full.count('/assets/thumbs/heroes_ui/cards/'))
+        for needle in ('太陰星君','528 records','herocard_taiyinxingjun01.webp'):
+            pos=full.find(needle)
+            print('KAISEN_NEEDLE', needle, pos)
+            if pos >= 0:
+                print('KAISEN_CONTEXT_BEGIN', needle)
+                print(full[max(0,pos-2500):pos+5000])
+                print('KAISEN_CONTEXT_END', needle)
     if args.max: heroes=heroes[:args.max]
     entities=[]; failures=[]
     now=datetime.now(timezone.utc).replace(microsecond=0).isoformat()
