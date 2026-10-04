@@ -94,7 +94,7 @@ jobs:
           rm -f android/app/src/main/assets/codex/source-sync-report.json
           rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
           sed -i "s/versionCode 10/versionCode 12/" android/app/build.gradle
-          sed -i "s/versionName '0.7.0'/versionName '0.7.1'/" android/app/build.gradle
+          sed -i "s/versionName '0.7.0'/versionName '0.7.2'/" android/app/build.gradle
       - name: Build APK
         run: gradle -p android :app:assembleDebug --stacktrace
       - name: Stage APK
