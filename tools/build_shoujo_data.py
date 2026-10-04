@@ -17,7 +17,7 @@ from pykakasi import kakasi
 KAISEN_HEROES="https://kaisen-wiki.h0rny.net/heroes"
 GAME8_HOME="https://game8.jp/shoujokaisen"
 GAME8_CATALOG="https://game8.jp/shoujokaisen/419407"
-UA="Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Safari/537.36 GameCodex/0.6"
+UA="GameCodex/0.6 (+https://github.com/Azrazieliz/Game-Central-Database)"
 FAC={"蜀":"shu","魏":"wei","吴":"wu","呉":"wu","群":"allied","漢":"han","使":"apostle","星":"star","時":"spacetime"}
 ATTR_BY_COLOR={"#e0563b":"STR","#3fa8e0":"INT","#36c98e":"AGI"}
 CAT_MARKERS={"通常攻撃":"normal","アクティブスキル":"active","パッシブスキル":"passive","パッシブ":"passive","桜花解放":"release"}
@@ -53,7 +53,7 @@ def romanize(s):
 
 def session():
     s=requests.Session()
-    s.headers.update({"User-Agent":UA,"Accept-Language":"ja,en-US;q=0.8,en;q=0.6"})
+    s.headers.update({"User-Agent":UA,"Accept":"text/html,application/xhtml+xml,image/avif,image/webp,image/*,*/*;q=0.8","Accept-Language":"ja,en-US;q=0.8,en;q=0.6"})
     return s
 
 def fetch(sess,url,timeout=35):
