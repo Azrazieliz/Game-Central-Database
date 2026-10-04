@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -44,11 +45,23 @@ jobs:
       - name: Install data builder dependencies
         run: python3 -m pip install --disable-pip-version-check --quiet requests beautifulsoup4 pillow pypinyin pykakasi
 
+      - name: Restore validated Kaisen catalogue baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ART_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=game-codex-shoujo-kaisen-pack-v0.5.0&per_page=100" --jq '.artifacts | map(select(.expired==false)) | sort_by(.created_at) | last | .id')
+          test -n "$ART_ID"
+          gh api -H "Accept: application/vnd.github+json" "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ART_ID}/zip" > baseline-artifact.zip
+          mkdir -p baseline-artifact baseline-pack
+          unzip -q baseline-artifact.zip -d baseline-artifact
+          unzip -q baseline-artifact/Game-Codex-Shoujo-Kaisen-pack-v0.5.0.zip -d baseline-pack
+          test -f baseline-pack/codex/data/catalog.json
+
       - name: Build current Shoujo Kaisen analyzed offline pack
         run: |
           rm -rf android/app/src/main/assets/codex/assets android/app/src/main/assets/codex/raw
           mkdir -p android/app/src/main/assets/codex/assets android/app/src/main/assets/codex/data
-          python3 tools/build_shoujo_data.py --out android/app/src/main/assets/codex --workers 8
+          python3 tools/build_shoujo_data.py --out android/app/src/main/assets/codex --workers 8 --kaisen-baseline baseline-pack/codex
           cat android/app/src/main/assets/codex/source-sync-report.json
 
       - name: Package portable offline pack
