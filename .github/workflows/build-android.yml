@@ -67,9 +67,9 @@ jobs:
       - name: Package portable offline pack
         run: |
           cd android/app/src/main/assets
-          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.6.1.zip" codex
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.6.2.zip" codex
           cd "$GITHUB_WORKSPACE"
-          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.6.1.zip > Game-Codex-Shoujo-Kaisen-pack-v0.6.1.sha256
+          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.6.2.zip > Game-Codex-Shoujo-Kaisen-pack-v0.6.2.sha256
 
       - name: Trim pack-builder files from APK payload
         run: |
@@ -83,24 +83,24 @@ jobs:
 
       - name: Stage APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.6.1.apk
-          sha256sum Game-Codex-Shoujo-Kaisen-v0.6.1.apk > Game-Codex-Shoujo-Kaisen-v0.6.1.sha256
-          ls -lh Game-Codex-Shoujo-Kaisen-v0.6.1.apk Game-Codex-Shoujo-Kaisen-pack-v0.6.1.zip
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.6.2.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v0.6.2.apk > Game-Codex-Shoujo-Kaisen-v0.6.2.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v0.6.2.apk Game-Codex-Shoujo-Kaisen-pack-v0.6.2.zip
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-apk-v0.6.1
+          name: game-codex-shoujo-kaisen-apk-v0.6.2
           path: |
-            Game-Codex-Shoujo-Kaisen-v0.6.1.apk
-            Game-Codex-Shoujo-Kaisen-v0.6.1.sha256
+            Game-Codex-Shoujo-Kaisen-v0.6.2.apk
+            Game-Codex-Shoujo-Kaisen-v0.6.2.sha256
           if-no-files-found: error
 
       - name: Upload portable pack
         uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-pack-v0.6.1
+          name: game-codex-shoujo-kaisen-pack-v0.6.2
           path: |
-            Game-Codex-Shoujo-Kaisen-pack-v0.6.1.zip
-            Game-Codex-Shoujo-Kaisen-pack-v0.6.1.sha256
+            Game-Codex-Shoujo-Kaisen-pack-v0.6.2.zip
+            Game-Codex-Shoujo-Kaisen-pack-v0.6.2.sha256
           if-no-files-found: error
