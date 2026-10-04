@@ -1,0 +1,1 @@
+window.CODEX_CATALOG={"generated_at":"repository-fallback","engine_version":"0.5.0","games":[{"id":1,"game_key":"shoujo_kaisen","name":"Shoujo Kaisen","adapter_key":"shoujo_kaisen"}],"patches":[],"entities":[],"unresolved_entity_count":0,"unresolved_entities":[],"compatibility":[],"tier_lists":[],"roster_accounts":[]};
