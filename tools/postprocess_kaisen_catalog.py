@@ -19,9 +19,14 @@ def build_display_names(entities):
     groups={}
     for e in entities:groups.setdefault(family_key(e),[]).append(e)
     bases={}
+    rarity_order={"R":0,"SR":1,"SSR":2,"UR":3,"UR+":4,"UR+2026":5}
     for k,rows in groups.items():
-        candidates=[e.get("canonical_name","") for e in rows if latin_name(e.get("canonical_name","")) and e.get("canonical_name","").strip().lower() not in BAD_DISPLAY_NAMES and len(e.get("canonical_name",""))<42 and not re.search(r"[—·:&]",e.get("canonical_name",""))]
-        if candidates:bases[k]=sorted(candidates,key=len)[0]
+        candidates=[e for e in rows if latin_name(e.get("canonical_name","")) and e.get("canonical_name","").strip().lower() not in BAD_DISPLAY_NAMES and len(e.get("canonical_name",""))<42 and not re.search(r"[—·:&]",e.get("canonical_name",""))]
+        if candidates:
+            # The lowest-rarity/simple Kaisen identity in a visual family is normally
+            # the base character name; higher-rarity records are costumes/variants.
+            best=sorted(candidates,key=lambda e:(rarity_order.get(str(e.get("rarity_key") or "").replace("＋","+"),99),len(e.get("canonical_name",""))))[0]
+            bases[k]=best.get("canonical_name","")
     fixed=[]
     for e in entities:
         raw=(e.get("canonical_name") or "").strip();base=bases.get(family_key(e));display=raw
