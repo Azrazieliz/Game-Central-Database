@@ -195,7 +195,8 @@ def normalize_english(text):
             vals=[]
             for pat in pats:vals += [float(x) for x in re.findall(pat,sl)]
             label=stat_labels.get(mech)
-            if label:vals += [float(x) for x in re.findall(rf"increases?\s+{label}\s+by\s*([+-]?\d+(?:\.\d+)?)%",sl)]
+            if label:
+                vals += [float(x) for x in re.findall(rf"increases?\s+(?:{label})\s+by\s*([+-]?\d+(?:\.\d+)?)%",sl) if x not in ("", None)]
             if vals:out.append(base_effect(s,"buff",mech,"positive",{"percent":max(vals),"percent_values":vals}))
         m=re.search(r"enemy[^.]{0,80}?deal\s*-\s*(\d+(?:\.\d+)?)%",sl)
         if m:
