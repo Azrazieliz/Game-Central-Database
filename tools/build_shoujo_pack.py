@@ -74,6 +74,12 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--out',required=True); ap.add_argument('--max',type=int,default=0); args=ap.parse_args()
     out=Path(args.out); assets=out/'assets'; data_dir=out/'data'; assets.mkdir(parents=True,exist_ok=True); data_dir.mkdir(parents=True,exist_ok=True)
     body,_=get(HEROES); heroes=parse_heroes(body)
+    if not heroes:
+        sample=body.decode('utf-8','replace')[:12000]
+        print('KAISEN_HTML_BYTES', len(body))
+        print('KAISEN_HTML_SAMPLE_BEGIN')
+        print(sample)
+        print('KAISEN_HTML_SAMPLE_END')
     if args.max: heroes=heroes[:args.max]
     entities=[]; failures=[]
     now=datetime.now(timezone.utc).replace(microsecond=0).isoformat()
