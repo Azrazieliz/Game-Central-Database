@@ -2,46 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#070a10" />
   <title>Game Codex</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header>
-    <div><h1>Game Codex</h1><p id="meta">Offline game databases</p></div>
-    <input id="search" class="hidden" type="search" placeholder="Search…" />
-  </header>
-  <section id="gameHome" class="game-home"></section>
-  <nav id="gameNav" class="game-nav hidden"></nav>
-  <main id="gameBrowser" class="hidden">
-    <aside id="characterFilters">
-      <label>Game<select id="gameFilter"><option value="">All</option></select></label>
-      <label>Faction<select id="factionFilter"><option value="">All</option></select></label>
-      <label>Rarity<select id="rarityFilter"><option value="">All</option></select></label>
-      <label>Attribute<select id="attributeFilter"><option value="">All</option></select></label>
-      <label>Mechanic<select id="mechanicFilter"><option value="">All</option></select></label>
-      <label>Analytical role<select id="roleFilter"><option value="">All</option></select></label>
-      <label>Roster account<select id="accountFilter"><option value="">Any account / none</option></select></label>
-      <label>Ownership<select id="ownedFilter"><option value="">All</option><option value="owned">Owned</option><option value="unowned">Unowned</option></select></label>
-      <label>Sort<select id="sortFilter"><option value="name">Name</option><option value="analysis">Optimized Codex rank</option><option value="rarity">Rarity</option></select></label>
-      <div class="layer-key">
-        <h3>Data layers</h3>
-        <div><span>A</span> Raw sources</div><div><span>B</span> Normalized mechanics</div>
-        <div><span>C</span> Source opinions</div><div><span>D</span> Local analysis</div><div><span>E</span> Personal roster</div>
+  <div id="app">
+    <section id="homeScreen" class="screen"></section>
+    <section id="gameScreen" class="screen hidden"></section>
+    <section id="detailScreen" class="screen hidden"></section>
+  </div>
+
+  <div id="sheetBackdrop" class="sheet-backdrop hidden"></div>
+  <section id="filterSheet" class="bottom-sheet hidden" aria-modal="true"></section>
+  <section id="settingsSheet" class="bottom-sheet hidden" aria-modal="true"></section>
+
+  <template id="characterCardTemplate">
+    <button class="character-card">
+      <div class="character-art-wrap">
+        <img class="character-art" loading="lazy" />
+        <div class="character-art-placeholder">NO ART</div>
+        <span class="rarity-badge"></span>
       </div>
-    </aside>
-    <section class="content">
-      <div class="toolbar"><strong id="count">0 entries</strong><button id="clear">Clear filters</button></div>
-      <div id="grid" class="grid"></div>
-      <div id="detail" class="detail hidden"></div>
-    </section>
-  </main>
-  <template id="cardTemplate">
-    <article class="character-card" aria-label="Open entry">
-      <div class="card-visual"><img class="card-image hidden" loading="lazy"/><div class="card-placeholder hidden">No visual cached</div></div>
-      <div class="card-overlay"><div class="card-top"><h2 class="card-name"></h2><span class="rarity"></span></div><div class="sub"></div><div class="rankline"></div></div>
-    </article>
+      <div class="character-card-copy">
+        <strong class="character-name"></strong>
+        <span class="character-meta"></span>
+      </div>
+    </button>
   </template>
+
+  <template id="subsystemCardTemplate">
+    <button class="subsystem-card">
+      <img class="subsystem-art" loading="lazy" />
+      <div class="subsystem-copy">
+        <strong class="subsystem-name"></strong>
+        <span class="subsystem-meta"></span>
+      </div>
+    </button>
+  </template>
+
   <script src="data/catalog.js"></script>
   <script src="app.js"></script>
 </body>
