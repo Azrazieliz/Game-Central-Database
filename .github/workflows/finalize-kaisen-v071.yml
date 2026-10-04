@@ -1,4 +1,4 @@
-name: Finalize Kaisen v0.7.1
+name: Finalize Kaisen v0.7.2
 on:
   workflow_dispatch:
   push:
@@ -60,12 +60,30 @@ jobs:
           assert any(a.get('profile_key')=='optimized_subsystems' for a in h['analysis'])
           print('FINAL_VALIDATION_OK',r['heroes_ranked_with_subsystems'],len(c['subsystems']))
           PY
+      - name: Refresh current app UI assets and validate home rendering inputs
+        run: |
+          cp android/app/src/main/assets/codex/app.js work/codex/app.js
+          cp android/app/src/main/assets/codex/index.html work/codex/index.html
+          cp android/app/src/main/assets/codex/styles.css work/codex/styles.css
+          node --check work/codex/app.js
+          python3 - <<'PY'
+          import json, os
+          c=json.load(open('work/codex/data/catalog.json'))
+          assert c.get('games'), 'No games in catalog'
+          for g in c['games']:
+              icon=g.get('icon_path')
+              assert icon, f"Missing icon_path for {g.get('name')}"
+              assert os.path.isfile(os.path.join('work/codex',icon)), (g.get('name'),icon)
+          html=open('work/codex/index.html',encoding='utf-8').read()
+          assert 'id="gameHome"' in html and 'id="gameBrowser"' in html
+          print('HOME_UI_VALIDATED',[(g['name'],g['icon_path']) for g in c['games']])
+          PY
       - name: Package full portable pack
         run: |
           cd work
-          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip" codex
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.7.2.zip" codex
           cd "$GITHUB_WORKSPACE"
-          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip > Game-Codex-Shoujo-Kaisen-pack-v0.7.1.sha256
+          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.7.2.zip > Game-Codex-Shoujo-Kaisen-pack-v0.7.2.sha256
       - name: Prepare Android offline assets
         run: |
           rm -rf android/app/src/main/assets/codex
@@ -75,26 +93,26 @@ jobs:
           rm -f android/app/src/main/assets/codex/identity-match-report.json
           rm -f android/app/src/main/assets/codex/source-sync-report.json
           rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
-          sed -i "s/versionCode 10/versionCode 11/" android/app/build.gradle
+          sed -i "s/versionCode 10/versionCode 12/" android/app/build.gradle
           sed -i "s/versionName '0.7.0'/versionName '0.7.1'/" android/app/build.gradle
       - name: Build APK
         run: gradle -p android :app:assembleDebug --stacktrace
       - name: Stage APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.7.1.apk
-          sha256sum Game-Codex-Shoujo-Kaisen-v0.7.1.apk > Game-Codex-Shoujo-Kaisen-v0.7.1.sha256
-          ls -lh Game-Codex-Shoujo-Kaisen-v0.7.1.apk Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.7.2.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v0.7.2.apk > Game-Codex-Shoujo-Kaisen-v0.7.2.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v0.7.2.apk Game-Codex-Shoujo-Kaisen-pack-v0.7.2.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-apk-v0.7.1
+          name: game-codex-shoujo-kaisen-apk-v0.7.2
           path: |
-            Game-Codex-Shoujo-Kaisen-v0.7.1.apk
-            Game-Codex-Shoujo-Kaisen-v0.7.1.sha256
+            Game-Codex-Shoujo-Kaisen-v0.7.2.apk
+            Game-Codex-Shoujo-Kaisen-v0.7.2.sha256
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-pack-v0.7.1
+          name: game-codex-shoujo-kaisen-pack-v0.7.2
           path: |
-            Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip
-            Game-Codex-Shoujo-Kaisen-pack-v0.7.1.sha256
+            Game-Codex-Shoujo-Kaisen-pack-v0.7.2.zip
+            Game-Codex-Shoujo-Kaisen-pack-v0.7.2.sha256
           if-no-files-found: error
