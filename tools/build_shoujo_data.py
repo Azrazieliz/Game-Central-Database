@@ -347,7 +347,7 @@ def parse_game8_page(sess,item):
       "character_name_source":clean(basic.get("キャラクター名")),"reading":clean(basic.get("読み方")),"skin_name_source":source_name,
       "cv":clean(basic.get("CV")),"skills":skills,"relationships":relationships,"full_art_url":choose_full_art(soup,source_name,rarity)}
 
-def match_game8(entities,page):
+def match_game8(entities,page,excluded_ids=None):\n    excluded_ids=set(excluded_ids or ())
     keys=set()
     for v in (page.get("catalog_name"),page.get("skin_name_source"),page.get("character_name_source")):
         if v:
@@ -554,7 +554,7 @@ def main():
     byid={e["id"]:e for e in entities};matches=[];unmatched=[];mapped_ids=set()
     for p in pages:
         if p.get("error"):unmatched.append({"url":p["url"],"name":p["catalog_name"],"reason":p["error"]});continue
-        eid,confidence,method=match_game8(entities,p)
+        eid,confidence,method=match_game8(entities,p,mapped_ids)
         if not eid or eid["id"] in mapped_ids:
             unmatched.append({"url":p["url"],"name":p["catalog_name"],"best_score":round(confidence,3),"reason":"unmatched_or_duplicate"});continue
         mapped_ids.add(eid["id"]);e=eid
