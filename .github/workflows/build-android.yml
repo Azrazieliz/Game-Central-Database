@@ -45,9 +45,6 @@ jobs:
       - name: Install data builder dependencies
         run: python3 -m pip install --disable-pip-version-check --quiet requests beautifulsoup4 pillow pypinyin pykakasi numpy opencv-python-headless
 
-      - name: Inspect Kaisen source structure
-        run: python3 tools/inspect_kaisen_structure.py
-
       - name: Restore validated Kaisen catalogue baseline
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,14 +62,16 @@ jobs:
           rm -rf android/app/src/main/assets/codex/assets android/app/src/main/assets/codex/raw
           mkdir -p android/app/src/main/assets/codex/assets android/app/src/main/assets/codex/data
           python3 tools/build_shoujo_data.py --out android/app/src/main/assets/codex --workers 8 --kaisen-baseline baseline-pack/codex
+          python3 tools/enrich_kaisen_systems.py --out android/app/src/main/assets/codex --workers 8
           cat android/app/src/main/assets/codex/source-sync-report.json
+          cat android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
 
       - name: Package portable offline pack
         run: |
           cd android/app/src/main/assets
-          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.6.3.zip" codex
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip" codex
           cd "$GITHUB_WORKSPACE"
-          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.6.3.zip > Game-Codex-Shoujo-Kaisen-pack-v0.6.3.sha256
+          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip > Game-Codex-Shoujo-Kaisen-pack-v0.7.0.sha256
 
       - name: Trim pack-builder files from APK payload
         run: |
@@ -80,30 +79,31 @@ jobs:
           rm -f android/app/src/main/assets/codex/data/catalog.json
           rm -f android/app/src/main/assets/codex/identity-match-report.json
           rm -f android/app/src/main/assets/codex/source-sync-report.json
+          rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
 
       - name: Build debug APK
         run: gradle -p android :app:assembleDebug --stacktrace
 
       - name: Stage APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.6.3.apk
-          sha256sum Game-Codex-Shoujo-Kaisen-v0.6.3.apk > Game-Codex-Shoujo-Kaisen-v0.6.3.sha256
-          ls -lh Game-Codex-Shoujo-Kaisen-v0.6.3.apk Game-Codex-Shoujo-Kaisen-pack-v0.6.3.zip
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.7.0.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v0.7.0.apk > Game-Codex-Shoujo-Kaisen-v0.7.0.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v0.7.0.apk Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-apk-v0.6.3
+          name: game-codex-shoujo-kaisen-apk-v0.7.0
           path: |
-            Game-Codex-Shoujo-Kaisen-v0.6.3.apk
-            Game-Codex-Shoujo-Kaisen-v0.6.3.sha256
+            Game-Codex-Shoujo-Kaisen-v0.7.0.apk
+            Game-Codex-Shoujo-Kaisen-v0.7.0.sha256
           if-no-files-found: error
 
       - name: Upload portable pack
         uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-pack-v0.6.3
+          name: game-codex-shoujo-kaisen-pack-v0.7.0
           path: |
-            Game-Codex-Shoujo-Kaisen-pack-v0.6.3.zip
-            Game-Codex-Shoujo-Kaisen-pack-v0.6.3.sha256
+            Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip
+            Game-Codex-Shoujo-Kaisen-pack-v0.7.0.sha256
           if-no-files-found: error
