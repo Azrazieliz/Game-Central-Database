@@ -1,1 +1,1 @@
-capture Kaisen subsystem structure 2026-10-04\n
+capture Kaisen source structure with client bundle 2026-10-04\n
