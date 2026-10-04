@@ -269,25 +269,40 @@ def find_basic_table(soup):
     return result
 
 def choose_full_art(soup,source_name,rarity):
+    # A Game8 page contains several images of the same character: eyecatch, icon/card and
+    # the actual character illustration in the "基本情報" section. Only the latter is eligible
+    # for detail_primary; a borderless/cropped card is not a substitute for full art.
     bad=("アイコン","図鑑","アイキャッチ","スキル","宝物","タップ","一覧","ランキング","バナー","広告")
+    basic_imgs=set()
+    basic_head=next((h for h in soup.find_all("h2") if clean(h.get_text(" ",strip=True)).endswith("の基本情報")),None)
+    if basic_head:
+        node=basic_head.next_sibling
+        while node and not (getattr(node,"name",None)=="h2"):
+            if getattr(node,"name",None)=="img":
+                basic_imgs.add(id(node))
+            if hasattr(node,"find_all"):
+                for im in node.find_all("img"): basic_imgs.add(id(im))
+            node=node.next_sibling
     candidates=[]
-    for img in soup.find_all("img"):
+    for order,img in enumerate(soup.find_all("img")):
         alt=clean(img.get("alt"))
         src=img.get("data-src") or img.get("data-original") or img.get("src")
         if not src or not re.search(r"^https?://|^//|^/",src):continue
         if any(x in alt for x in bad):continue
         score=0
+        if id(img) in basic_imgs:score+=300
         if source_name and source_name in alt:score+=100
         if rarity and rarity in alt:score+=15
+        if alt.endswith("画像") and id(img) not in basic_imgs:score-=60
         if "少女廻戦" in alt:score+=10
         if "img.game8.jp" in src or "assets.game8.jp" in src:score+=15
         try:
             w=int(img.get("width") or 0);h=int(img.get("height") or 0)
-            if h>w:score+=10
+            if h>w:score+=15
             score+=min((w*h)/100000,20)
         except:pass
-        if score>30:candidates.append((score,urljoin(GAME8_HOME,src),alt))
-    return sorted(candidates,reverse=True)[0][1] if candidates else None
+        if score>30:candidates.append((score,-order,urljoin(GAME8_HOME,src),alt))
+    return sorted(candidates,reverse=True)[0][2] if candidates else None
 
 def parse_game8_page(sess,item):
     url=item["url"]; retrieved=now()
