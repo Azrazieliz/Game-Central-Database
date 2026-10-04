@@ -41,43 +41,43 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Build current Shoujo Kaisen offline bootstrap pack
+      - name: Build current Shoujo Kaisen analyzed offline pack
         run: |
           rm -rf android/app/src/main/assets/codex/assets
           mkdir -p android/app/src/main/assets/codex/assets android/app/src/main/assets/codex/data
-          python3 tools/build_shoujo_pack.py --out android/app/src/main/assets/codex
+          python3 -m pip install --disable-pip-version-check --quiet requests beautifulsoup4 pillow pypinyin pykakasi\n          python3 tools/build_shoujo_data.py --out android/app/src/main/assets/codex --workers 8
           cat android/app/src/main/assets/codex/source-sync-report.json
 
       - name: Package portable offline pack
         run: |
           cd android/app/src/main/assets
-          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.5.0.zip" codex
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.6.0.zip" codex
           cd "$GITHUB_WORKSPACE"
-          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.5.0.zip > Game-Codex-Shoujo-Kaisen-pack-v0.5.0.sha256
+          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.6.0.zip > Game-Codex-Shoujo-Kaisen-pack-v0.6.0.sha256
 
       - name: Build debug APK
         run: gradle -p android :app:assembleDebug --stacktrace
 
       - name: Stage APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.5.0.apk
-          sha256sum Game-Codex-Shoujo-Kaisen-v0.5.0.apk > Game-Codex-Shoujo-Kaisen-v0.5.0.sha256
-          ls -lh Game-Codex-Shoujo-Kaisen-v0.5.0.apk Game-Codex-Shoujo-Kaisen-pack-v0.5.0.zip
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.6.0.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v0.6.0.apk > Game-Codex-Shoujo-Kaisen-v0.6.0.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v0.6.0.apk Game-Codex-Shoujo-Kaisen-pack-v0.6.0.zip
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-apk-v0.5.0
+          name: game-codex-shoujo-kaisen-apk-v0.6.0
           path: |
-            Game-Codex-Shoujo-Kaisen-v0.5.0.apk
-            Game-Codex-Shoujo-Kaisen-v0.5.0.sha256
+            Game-Codex-Shoujo-Kaisen-v0.6.0.apk
+            Game-Codex-Shoujo-Kaisen-v0.6.0.sha256
           if-no-files-found: error
 
       - name: Upload portable pack
         uses: actions/upload-artifact@v4
         with:
-          name: game-codex-shoujo-kaisen-pack-v0.5.0
+          name: game-codex-shoujo-kaisen-pack-v0.6.0
           path: |
-            Game-Codex-Shoujo-Kaisen-pack-v0.5.0.zip
-            Game-Codex-Shoujo-Kaisen-pack-v0.5.0.sha256
+            Game-Codex-Shoujo-Kaisen-pack-v0.6.0.zip
+            Game-Codex-Shoujo-Kaisen-pack-v0.6.0.sha256
           if-no-files-found: error
