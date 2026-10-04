@@ -1,4 +1,4 @@
-let catalog={games:[],entities:[],patches:[],compatibility:[],roster_accounts:[]};\nlet selectedGameId=null;
+let catalog={games:[],entities:[],subsystems:[],patches:[],compatibility:[],roster_accounts:[]};\nlet selectedGameId=null, selectedSection='characters';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const parse=v=>{try{return JSON.parse(v||'{}')}catch{return v}};
@@ -6,7 +6,7 @@ const ids=['search','gameFilter','factionFilter','rarityFilter','attributeFilter
 
 function fill(sel,values){for(const v of [...new Set(values.filter(Boolean))].sort()){const o=document.createElement('option');o.value=v;o.textContent=v;$(sel).appendChild(o)}}
 function gameName(id){return catalog.games.find(g=>g.id===id)?.name||''}
-function bestAnalysis(e){return (e.analysis||[]).filter(x=>x.tier_label&&x.tier_label!=='UNRANKED').sort((a,b)=>Number(a.rank_order||1e9)-Number(b.rank_order||1e9))[0]||null}
+function bestAnalysis(e){return (e.analysis||[]).find(x=>x.mode_key==='generic'&&x.profile_key==='optimized_subsystems'&&x.tier_label&&x.tier_label!=='UNRANKED')||(e.analysis||[]).filter(x=>x.tier_label&&x.tier_label!=='UNRANKED').sort((a,b)=>Number(a.rank_order||1e9)-Number(b.rank_order||1e9))[0]||null}
 function ownedFor(e,account){const rows=(e.roster||[]).filter(r=>!account||String(r.account_id)===String(account));return rows.some(r=>Number(r.owned)===1)}
 function searchable(e){return [e.canonical_name,e.entity_key,e.role_key,e.faction_key,e.rarity_key,e.attribute_type,...(e.aliases||[]),...(e.skills||[]).flatMap(s=>[s.name,s.skill_type]),...(e.signals||[]).flatMap(s=>[s.signal_type,s.mechanic_key])].join(' ').toLowerCase()}
 function usableAsset(x){return x&&(x.pack_path||x.local_path)}
@@ -18,6 +18,39 @@ function filtered(){
  const sort=$('#sortFilter').value;
  arr.sort((a,b)=>sort==='analysis'?(Number(bestAnalysis(a)?.rank_order||1e9)-Number(bestAnalysis(b)?.rank_order||1e9)||a.canonical_name.localeCompare(b.canonical_name)):sort==='rarity'?String(b.rarity_key||'').localeCompare(String(a.rarity_key||''))||a.canonical_name.localeCompare(b.canonical_name):a.canonical_name.localeCompare(b.canonical_name));
  return arr;
+}
+
+function subsystemRows(){
+ const type={souls:'soul',spirits:'martial_spirit',mounts:'mount'}[selectedSection],q=$('#search').value.trim().toLowerCase();
+ return (catalog.subsystems||[]).filter(s=>s.subsystem_type===type&&(!q||[s.name,s.subsystem_key,s.category,s.element,s.max_profile&&s.max_profile.description].filter(Boolean).join(' ').toLowerCase().includes(q))).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+}
+function renderSubsystems(){
+ const arr=subsystemRows(),grid=$('#grid');$('#count').textContent=arr.length+' '+selectedSection;grid.innerHTML='';
+ for(const s of arr){
+  const n=$('#cardTemplate').content.cloneNode(true),article=n.querySelector('.character-card'),img=chooseImage(s,'grid_card',['card','icon']);
+  if(img){const im=n.querySelector('.card-image');im.src=assetSrc(img);im.alt=s.name;im.classList.remove('hidden')}else n.querySelector('.card-placeholder').classList.remove('hidden');
+  n.querySelector('.card-name').textContent=s.name;
+  n.querySelector('.rarity').textContent=s.subsystem_type==='soul'?(s.category||'Soul'):(s.subsystem_type==='martial_spirit'?(s.element||'Spirit'):'Mount');
+  n.querySelector('.sub').textContent=s.subsystem_type==='soul'?((s.profession_fit||[]).join(' • ')||'All roles'):s.subsystem_type==='martial_spirit'?((s.compatibility&&s.compatibility.hero_keys)||[]).length+' compatible heroes':'Mount';
+  n.querySelector('.rankline').textContent=s.max_profile&&s.max_profile.level!=null?'Max progression '+s.max_profile.level:'Source progression';
+  article.onclick=()=>location.hash='subsystem/'+s.subsystem_type+'/'+encodeURIComponent(s.subsystem_key);grid.appendChild(n);
+ }
+}
+function subsystemDetail(type,key){
+ const s=(catalog.subsystems||[]).find(x=>x.subsystem_type===type&&x.subsystem_key===decodeURIComponent(key));if(!s)return;
+ $('#grid').classList.add('hidden');const d=$('#detail');d.classList.remove('hidden');
+ const img=chooseImage(s,'grid_card',['card','icon']);const visual=img?'<img class="detail-art subsystem-art" src="'+esc(assetSrc(img))+'" alt="'+esc(s.name)+'"/>':'<div class="detail-art placeholder">No cached visual</div>';
+ const prog=(s.progression||[]).map(p=>'<div class="skill"><h3>'+esc(p.name||s.name)+' <span class="muted">Lv/Tier '+esc(p.level)+'</span></h3><p>'+esc(p.description||'')+'</p><div class="chips">'+((p.effects||[]).map(x=>'<span class="pill">'+esc(x.effect_type)+(x.mechanic_key?' · '+esc(x.mechanic_key):'')+'</span>').join(''))+'</div></div>').join('');
+ let compat='';
+ if(type==='soul')compat='Professions: '+(s.profession_fit||[]).join(', ');
+ if(type==='martial_spirit')compat='Explicit compatible heroes: '+((s.compatibility&&s.compatibility.heroes)||[]).map(x=>x.name).join(', ');
+ if(type==='mount')compat=(s.compatibility&&s.compatibility.assumption)||'No per-character source restriction listed.';
+ d.innerHTML='<button class="back" onclick="location.hash=\'game/'+selectedGameId+'/'+selectedSection+'\'">← Back</button><div class="character-layout"><div class="visual-panel">'+visual+'</div><div class="character-data"><h2>'+esc(s.name)+'</h2><p>'+esc(type.replace('_',' '))+'</p><div class="section"><h3>Compatibility</h3><p>'+esc(compat)+'</p></div><div class="section"><h3>Maximum profile</h3><p>'+esc((s.max_profile&&s.max_profile.description)||'')+'</p></div><div class="section"><h3>Progression</h3>'+prog+'</div><div class="section"><h3>Source</h3><p class="muted">'+esc(s.source_url||'')+'</p></div></div></div>';
+}
+function renderGameNav(){
+ const nav=$('#gameNav');if(!nav)return;
+ const counts={characters:(catalog.entities||[]).filter(e=>!selectedGameId||e.game_id===selectedGameId).length,souls:(catalog.subsystems||[]).filter(x=>x.subsystem_type==='soul').length,spirits:(catalog.subsystems||[]).filter(x=>x.subsystem_type==='martial_spirit').length,mounts:(catalog.subsystems||[]).filter(x=>x.subsystem_type==='mount').length};
+ nav.innerHTML='<button onclick="location.hash=\'\'">‹ Games</button>'+['characters','souls','spirits','mounts'].map(s=>'<button class="'+(selectedSection===s?'active':'')+'" onclick="location.hash=\'game/'+selectedGameId+'/'+s+'\'">'+(s==='spirits'?'Martial Spirits':s.charAt(0).toUpperCase()+s.slice(1))+' <span>'+counts[s]+'</span></button>').join('');
 }
 function render(){
  const arr=filtered(),grid=$('#grid');$('#count').textContent=`${arr.length} character${arr.length===1?'':'s'}`;grid.innerHTML='';
@@ -55,39 +88,16 @@ function renderHome(){
   grid.appendChild(btn);
  }
 }
+
 function route(){
- const em=location.hash.match(/^#entity\/(\d+)$/);
- const gm=location.hash.match(/^#game\/(\d+)$/);
- if(em){
-   const e=catalog.entities.find(x=>x.id===Number(em[1]));
-   selectedGameId=e?.game_id||null;
-   $('#gameHome').classList.add('hidden');
-   $('#gameBrowser').classList.remove('hidden');
-   $('#search').classList.remove('hidden');
-   showDetail(Number(em[1]));
-   return;
- }
- if(gm){
-   selectedGameId=Number(gm[1]);
-   $('#gameHome').classList.add('hidden');
-   $('#gameBrowser').classList.remove('hidden');
-   $('#search').classList.remove('hidden');
-   $('#detail').classList.add('hidden');
-   $('#grid').classList.remove('hidden');
-   const g=catalog.games.find(x=>x.id===selectedGameId);
-   $('#meta').textContent=g?`${g.name} • ${g.character_count||catalog.entities.filter(e=>e.game_id===selectedGameId).length} characters • generated ${catalog.generated_at}`:'Game Codex';
-   render();
-   return;
- }
- selectedGameId=null;
- $('#gameBrowser').classList.add('hidden');
- $('#detail').classList.add('hidden');
- $('#search').classList.add('hidden');
- $('#meta').textContent='Offline game databases';
- renderHome();
+ const em=location.hash.match(/^#entity\/(\d+)$/),sm=location.hash.match(/^#subsystem\/([^/]+)\/(.+)$/),gm=location.hash.match(/^#game\/(\d+)(?:\/(characters|souls|spirits|mounts))?$/);
+ if(em){const e=catalog.entities.find(x=>x.id===Number(em[1]));selectedGameId=e?.game_id||null;selectedSection='characters';$('#gameHome').classList.add('hidden');$('#gameNav')?.classList.remove('hidden');$('#gameBrowser').classList.remove('hidden');$('#search').classList.remove('hidden');$('#characterFilters')?.classList.remove('hidden');$('#gameBrowser').classList.remove('subsystem-mode');renderGameNav();showDetail(Number(em[1]));return}
+ if(sm){selectedSection={soul:'souls',martial_spirit:'spirits',mount:'mounts'}[sm[1]]||'characters';$('#gameHome').classList.add('hidden');$('#gameNav')?.classList.remove('hidden');$('#gameBrowser').classList.remove('hidden');$('#search').classList.remove('hidden');$('#characterFilters')?.classList.add('hidden');$('#gameBrowser').classList.add('subsystem-mode');renderGameNav();subsystemDetail(sm[1],sm[2]);return}
+ if(gm){selectedGameId=Number(gm[1]);selectedSection=gm[2]||'characters';$('#gameHome').classList.add('hidden');$('#gameNav')?.classList.remove('hidden');$('#gameBrowser').classList.remove('hidden');$('#search').classList.remove('hidden');$('#detail').classList.add('hidden');$('#grid').classList.remove('hidden');const charMode=selectedSection==='characters';$('#characterFilters')?.classList.toggle('hidden',!charMode);$('#gameBrowser').classList.toggle('subsystem-mode',!charMode);$('#search').placeholder=charMode?'Search characters, skills, aliases, mechanics…':'Search '+selectedSection+'…';const g=catalog.games.find(x=>x.id===selectedGameId);$('#meta').textContent=g?g.name+' • generated '+catalog.generated_at:'Game Codex';renderGameNav();render();return}
+ selectedGameId=null;selectedSection='characters';$('#gameNav')?.classList.add('hidden');$('#gameBrowser').classList.add('hidden');$('#detail').classList.add('hidden');$('#search').classList.add('hidden');$('#meta').textContent='Offline game databases';renderHome();
 }
 async function boot(){
- catalog=window.CODEX_CATALOG||await (await fetch('data/catalog.json')).json();
+ catalog=window.CODEX_CATALOG||await (await fetch('data/catalog.json')).json();catalog.subsystems=catalog.subsystems||[];
  $('#meta').textContent=`${catalog.games.length} game(s) • ${catalog.entities.length} characters • generated ${catalog.generated_at}`;
  fill('#gameFilter',catalog.games.map(x=>x.name));fill('#roleFilter',catalog.entities.map(x=>x.role_key));fill('#factionFilter',catalog.entities.map(x=>x.faction_key));fill('#rarityFilter',catalog.entities.map(x=>x.rarity_key));fill('#attributeFilter',catalog.entities.map(x=>x.attribute_type));fill('#mechanicFilter',catalog.entities.flatMap(x=>(x.signals||[]).map(s=>s.mechanic_key)));
  for(const a of catalog.roster_accounts||[]){const o=document.createElement('option');o.value=a.id;o.textContent=a.label||a.account_key;$('#accountFilter').appendChild(o)}
