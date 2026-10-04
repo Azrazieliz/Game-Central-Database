@@ -1,4 +1,5 @@
-let catalog={games:[],entities:[],subsystems:[],patches:[],compatibility:[],roster_accounts:[]};\nlet selectedGameId=null, selectedSection='characters';
+let catalog={games:[],entities:[],subsystems:[],patches:[],compatibility:[],roster_accounts:[]};
+let selectedGameId=null, selectedSection='characters';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const parse=v=>{try{return JSON.parse(v||'{}')}catch{return v}};
