@@ -8,6 +8,7 @@ targets={
  "souls.html":BASE+"/souls",
  "spirits.html":BASE+"/spirits",
  "mounts.html":BASE+"/transcendent",
+ "album-page.txt":BASE+"/_next/static/chunks/app/"+"%28album%29/"+ "%5Bsection%5D/"+"page-b37d1f1971e5fd94.js",
 }
 out=Path("android/app/src/main/assets/codex/research");out.mkdir(parents=True,exist_ok=True)
 for name,url in targets.items():
