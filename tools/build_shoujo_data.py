@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, concurrent.futures, hashlib, html, io, json, math, re, statistics, time, unicodedata
+import argparse, concurrent.futures, hashlib, html, io, json, math, re, shutil, statistics, time, unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -63,6 +63,34 @@ def fetch(sess,url,timeout=35):
 
 def source_record(site,url,retrieved,kind):
     return {"site_name":site,"url":url,"retrieved_at":retrieved,"kind":kind,"conflict_status":"none"}
+
+def load_kaisen_baseline(path, out_assets):
+    root=Path(path)
+    cat=json.loads((root/"data/catalog.json").read_text(encoding="utf-8"))
+    entities=[]
+    for src in cat.get("entities",[]):
+        imgs=src.get("images") or []
+        card=next((x for x in imgs if x.get("asset_type")=="card" or x.get("display_role")=="grid_card"),None)
+        asset_url=(card or {}).get("source_url")
+        stem=Path(urlparse(asset_url or src.get("entity_key","")).path).stem if asset_url else src.get("entity_key","").split(":")[-1]
+        core=re.sub(r"^herocard_","",stem);core=re.sub(r"\d+$","",core)
+        e={
+          "id":int(src["id"]),"game_id":1,"entity_key":src.get("entity_key") or ("kaisen:"+stem),
+          "canonical_name":src["canonical_name"],"display_name_status":"authoritative",
+          "rarity_key":src.get("rarity_key"),"faction_key":src.get("faction_key"),"attribute_type":src.get("attribute_type"),
+          "asset_url":asset_url,"asset_stem":stem,"match_key":norm_ascii(core),
+          "aliases":[],"images":[],"skills":[],"signals":[],"relationships":[],"source_opinions":[],
+          "provenance":list(src.get("provenance") or []),"analysis":[],"roster":[]
+        }
+        if card and card.get("pack_path"):
+            source=root/card["pack_path"];target=out_assets/Path(card["pack_path"]).name
+            if source.is_file():
+                shutil.copy2(source,target)
+                e["images"].append({**card,"pack_path":"assets/"+target.name})
+        entities.append(e)
+    if len(entities)<400:
+        raise RuntimeError(f"Kaisen baseline incomplete: {len(entities)}")
+    return entities
 
 def parse_kaisen(sess):
     retrieved=now(); r=fetch(sess,KAISEN_HEROES); soup=BeautifulSoup(r.text,"html.parser")
@@ -486,10 +514,13 @@ def save_game_icon(sess,outdir):
     return None
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument("--out",required=True);ap.add_argument("--workers",type=int,default=8);args=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument("--out",required=True);ap.add_argument("--workers",type=int,default=8);ap.add_argument("--kaisen-baseline");args=ap.parse_args()
     out=Path(args.out);assets=out/"assets";data=out/"data";raw=out/"raw";assets.mkdir(parents=True,exist_ok=True);data.mkdir(parents=True,exist_ok=True);raw.mkdir(parents=True,exist_ok=True)
     sess=session()
-    entities,khtml,kret=parse_kaisen(sess);(raw/"kaisen-heroes.html").write_text(khtml,encoding="utf-8")
+    if args.kaisen_baseline:
+        entities=load_kaisen_baseline(args.kaisen_baseline,assets);khtml="";kret=now()
+    else:
+        entities,khtml,kret=parse_kaisen(sess);(raw/"kaisen-heroes.html").write_text(khtml,encoding="utf-8")
     catalog,ghtml,gret=parse_game8_catalog(sess);(raw/"game8-catalog.html").write_text(ghtml,encoding="utf-8")
     def worker(item):
         s=session();return parse_game8_page(s,item)
@@ -520,10 +551,11 @@ def main():
     print(json.dumps({"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_fetched":len(pages),"mapped":len(matches),"unmatched":len(unmatched),"with_skills":sum(bool(e["skills"]) for e in entities)},ensure_ascii=False),flush=True)
     # visuals
     for i,e in enumerate(entities,1):
-        try:
-            m=save_image(sess,e["asset_url"],assets,e["entity_key"]+"-card",900,KAISEN_HEROES)
-            if m:e["images"].append({"id":e["id"]*10+1,"image_key":e["entity_key"]+"-card","asset_type":"card","display_role":"grid_card","priority":100,"source_url":e["asset_url"],**m})
-        except Exception as ex:pass
+        if not any(x.get("display_role")=="grid_card" for x in e["images"]):
+            try:
+                m=save_image(sess,e["asset_url"],assets,e["entity_key"]+"-card",900,KAISEN_HEROES)
+                if m:e["images"].append({"id":e["id"]*10+1,"image_key":e["entity_key"]+"-card","asset_type":"card","display_role":"grid_card","priority":100,"source_url":e["asset_url"],**m})
+            except Exception as ex:pass
         furl=e.pop("_full_art_url",None)
         if furl:
             try:
