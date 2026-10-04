@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, mimetypes, re, urllib.parse, urllib.request
+import argparse, hashlib, html, json, mimetypes, re, urllib.parse, urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 from datetime import datetime, timezone
@@ -39,25 +39,30 @@ def get(url, timeout=30):
         return r.read(), r.headers.get_content_type()
 
 def parse_heroes(body):
-    p=P(HEROES); p.feed(body.decode('utf-8','replace'))
-    assets=sorted([x for x in p.links if x['kind']=='a' and '/assets/thumbs/heroes_ui/cards/' in urllib.parse.urlparse(x['href']).path and re.search(r'\.(?:webp|png|jpe?g|avif)$',x['href'],re.I)],key=lambda x:x['order'])
-    if not assets:
-        assets=sorted([x for x in p.links if x['kind']=='img' and '/assets/thumbs/heroes_ui/cards/' in urllib.parse.urlparse(x['href']).path],key=lambda x:x['order'])
+    text=body.decode('utf-8','replace')
+    card_re=re.compile(r'<button[^>]*class="[^"]*silk-cardcell[^"]*"[^>]*title="([^"]*)"[^>]*>(.*?)</button>', re.S|re.I)
+    attr_map={'#E0563B':'STR','#3FA8E0':'INT','#36C98E':'AGI'}
     out=[]; seen=set()
-    for i,a in enumerate(assets):
-        end=assets[i+1]['order'] if i+1<len(assets) else 10**12
-        texts=[x['text'] for x in p.texts if a['order'] < x['order'] < end]
-        fri=next((j for j,t in enumerate(texts) if re.fullmatch(rf'[蜀魏吴呉群漢使星]{RAR}',re.sub(r'\s+','',t).replace('＋','+'))),None)
-        if fri is None: continue
-        candidates=[t for t in texts[:fri] if t.lower() not in {'image','heroes','newest','oldest'} and not re.fullmatch(rf'[蜀魏吴呉群漢使星]{RAR}',re.sub(r'\s+','',t).replace('＋','+'))]
-        if not candidates: continue
-        name=candidates[-1].strip()
-        fr=re.sub(r'\s+','',texts[fri]).replace('＋','+')
-        faction=FAC.get(fr[0]); rarity=fr[1:]
-        asset=a['href']; key=Path(urllib.parse.urlparse(asset).path).stem
-        sig=(key,name,rarity)
-        if sig in seen: continue
-        seen.add(sig); out.append({'entry_key':key,'name':name,'faction':faction,'rarity':rarity,'asset_url':asset})
+    for raw_name, block in card_re.findall(text):
+        img=re.search(r'<img[^>]+src="([^"]*/assets/thumbs/heroes_ui/cards/[^"]+)"',block,re.I)
+        if not img:
+            img=re.search(r'<img[^>]+src="([^"]*assets/thumbs/heroes_ui/cards/[^"]+)"',block,re.I)
+        faction=re.search(r'class="[^"]*kit-faction-seal[^"]*"[^>]*>([^<]+)</span>',block,re.I)
+        rarity=re.search(r'class="[^"]*kit-hpc-rar[^"]*"[^>]*>([^<]+)</span>',block,re.I)
+        adot=re.search(r'class="[^"]*kit-hpc-adot[^"]*"[^>]*style="[^"]*background:([^;" ]+)',block,re.I)
+        if not img or not faction or not rarity:
+            continue
+        name=html.unescape(raw_name).strip()
+        asset=urllib.parse.urljoin(HEROES,html.unescape(img.group(1)))
+        fac=html.unescape(faction.group(1)).strip()
+        rar=html.unescape(rarity.group(1)).strip().replace('＋','+')
+        attr=attr_map.get(adot.group(1).upper()) if adot else None
+        key=Path(urllib.parse.urlparse(asset).path).stem
+        sig=(key,name,rar)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append({'entry_key':key,'name':name,'faction':FAC.get(fac,fac),'rarity':rar,'attribute_type':attr,'asset_url':asset})
     return out
 
 def save_asset(url, outdir):
@@ -74,21 +79,6 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--out',required=True); ap.add_argument('--max',type=int,default=0); args=ap.parse_args()
     out=Path(args.out); assets=out/'assets'; data_dir=out/'data'; assets.mkdir(parents=True,exist_ok=True); data_dir.mkdir(parents=True,exist_ok=True)
     body,_=get(HEROES); heroes=parse_heroes(body)
-    if not heroes:
-        sample=body.decode('utf-8','replace')[:12000]
-        print('KAISEN_HTML_BYTES', len(body))
-        print('KAISEN_HTML_SAMPLE_BEGIN')
-        print(sample)
-        print('KAISEN_HTML_SAMPLE_END')
-        full=body.decode('utf-8','replace')
-        print('KAISEN_ASSET_TOKEN_COUNT', full.count('/assets/thumbs/heroes_ui/cards/'))
-        for needle in ('太陰星君','528 records','herocard_taiyinxingjun01.webp'):
-            pos=full.find(needle)
-            print('KAISEN_NEEDLE', needle, pos)
-            if pos >= 0:
-                print('KAISEN_CONTEXT_BEGIN', needle)
-                print(full[max(0,pos-2500):pos+5000])
-                print('KAISEN_CONTEXT_END', needle)
     if args.max: heroes=heroes[:args.max]
     entities=[]; failures=[]
     now=datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -99,7 +89,7 @@ def main():
             images=[{'id':idx,'image_key':h['entry_key']+'-card','asset_type':'card','display_role':'grid_card','priority':100,'source_url':h['asset_url'],'pack_path':pack_path,'sha256':sha,'byte_size':size}]
         except Exception as e:
             failures.append({'name':h['name'],'url':h['asset_url'],'error':str(e)})
-        entities.append({'id':idx,'game_id':1,'entity_key':'kaisen:'+h['entry_key'],'canonical_name':h['name'],'display_name_status':'authoritative','rarity_key':h['rarity'],'faction_key':h['faction'],'role_key':None,'attribute_type':None,'aliases':[],'images':images,'versions':[],'skills':[],'signals':[],'relationships':[],'source_opinions':[],'provenance':[{'site_name':'Kaisen Wiki','fact_key':'character.name','conflict_status':'none','url':HEROES,'retrieved_at':now}],'analysis':[],'roster':[]})
+        entities.append({'id':idx,'game_id':1,'entity_key':'kaisen:'+h['entry_key'],'canonical_name':h['name'],'display_name_status':'authoritative','rarity_key':h['rarity'],'faction_key':h['faction'],'role_key':None,'attribute_type':h.get('attribute_type'),'aliases':[],'images':images,'versions':[],'skills':[],'signals':[],'relationships':[],'source_opinions':[],'provenance':[{'site_name':'Kaisen Wiki','fact_key':'character.name','conflict_status':'none','url':HEROES,'retrieved_at':now}],'analysis':[],'roster':[]})
     catalog={'generated_at':now,'engine_version':'0.5.0-bootstrap','games':[{'id':1,'game_key':'shoujo_kaisen','name':'Shoujo Kaisen','adapter_key':'shoujo_kaisen'}],'patches':[],'entities':entities,'unresolved_entity_count':0,'unresolved_entities':[],'compatibility':[],'tier_lists':[],'roster_accounts':[],'bootstrap':{'source':HEROES,'character_count':len(entities),'asset_failures':failures,'note':'Kaisen Wiki canonical names/cards bootstrap. Kit analysis is populated by the full engine pipeline, never from source tier labels.'}}
     (data_dir/'catalog.json').write_text(json.dumps(catalog,ensure_ascii=False,indent=2),encoding='utf-8')
     (data_dir/'catalog.js').write_text('window.CODEX_CATALOG='+json.dumps(catalog,ensure_ascii=False,separators=(',',':'))+';',encoding='utf-8')
