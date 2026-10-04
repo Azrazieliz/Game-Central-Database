@@ -8,11 +8,13 @@
 </head>
 <body>
   <header>
-    <div><h1>Game Codex</h1><p id="meta">Offline portable database</p></div>
-    <input id="search" type="search" placeholder="Search characters, skills, aliases, mechanics…" />
+    <div><h1>Game Codex</h1><p id="meta">Offline game databases</p></div>
+    <input id="search" class="hidden" type="search" placeholder="Search…" />
   </header>
-  <section id="gameHome" class="game-home"></section>\n  <main id="gameBrowser" class="hidden">
-    <aside>
+  <section id="gameHome" class="game-home"></section>
+  <nav id="gameNav" class="game-nav hidden"></nav>
+  <main id="gameBrowser" class="hidden">
+    <aside id="characterFilters">
       <label>Game<select id="gameFilter"><option value="">All</option></select></label>
       <label>Faction<select id="factionFilter"><option value="">All</option></select></label>
       <label>Rarity<select id="rarityFilter"><option value="">All</option></select></label>
@@ -21,7 +23,7 @@
       <label>Analytical role<select id="roleFilter"><option value="">All</option></select></label>
       <label>Roster account<select id="accountFilter"><option value="">Any account / none</option></select></label>
       <label>Ownership<select id="ownedFilter"><option value="">All</option><option value="owned">Owned</option><option value="unowned">Unowned</option></select></label>
-      <label>Sort<select id="sortFilter"><option value="name">Name</option><option value="analysis">Best analytical rank</option><option value="rarity">Rarity</option></select></label>
+      <label>Sort<select id="sortFilter"><option value="name">Name</option><option value="analysis">Optimized Codex rank</option><option value="rarity">Rarity</option></select></label>
       <div class="layer-key">
         <h3>Data layers</h3>
         <div><span>A</span> Raw sources</div><div><span>B</span> Normalized mechanics</div>
@@ -29,13 +31,13 @@
       </div>
     </aside>
     <section class="content">
-      <div class="toolbar"><strong id="count">0 entities</strong><button id="clear">Clear filters</button></div>
+      <div class="toolbar"><strong id="count">0 entries</strong><button id="clear">Clear filters</button></div>
       <div id="grid" class="grid"></div>
       <div id="detail" class="detail hidden"></div>
     </section>
   </main>
   <template id="cardTemplate">
-    <article class="character-card" aria-label="Open character">
+    <article class="character-card" aria-label="Open entry">
       <div class="card-visual"><img class="card-image hidden" loading="lazy"/><div class="card-placeholder hidden">No visual cached</div></div>
       <div class="card-overlay"><div class="card-top"><h2 class="card-name"></h2><span class="rarity"></span></div><div class="sub"></div><div class="rankline"></div></div>
     </article>
