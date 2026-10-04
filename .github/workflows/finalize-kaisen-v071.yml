@@ -47,7 +47,7 @@ jobs:
           python3 tools/postprocess_kaisen_catalog.py --out work/codex
       - name: Refresh Kaisen-native detail artwork
         run: |
-          python3 tools/refresh_kaisen_art.py --out work/codex --workers 8
+          python3 tools/refresh_kaisen_art.py --out work/codex --workers 24
       - name: Validate data presentation boundaries
         run: |
           python3 - <<'PY'
