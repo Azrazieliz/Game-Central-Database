@@ -217,6 +217,98 @@ def normalize_english(text):
     return ded
 
 
+def target_from_japanese(s):
+    if any(x in s for x in ("敵全体","全敵武将","全ての敵武将")):return {"side":"enemy","scope":"all"}
+    m=re.search(r"敵(?:武将)?(\d+)人",s)
+    if m:return {"side":"enemy","count":int(m.group(1))}
+    if "ランダムな敵" in s:return {"side":"enemy","scope":"random"}
+    if any(x in s for x in ("味方全体","味方武将全体","全味方武将")):return {"side":"ally","scope":"all"}
+    m=re.search(r"味方(?:武将)?(\d+)人",s)
+    if m:return {"side":"ally","count":int(m.group(1))}
+    if any(x in s for x in ("自身","自分")):return {"side":"self","count":1}
+    return {}
+
+
+def jp_effect(sentence,etype,mechanic,polarity=None):
+    vals=[float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*[%％]",sentence)]
+    hits=None
+    for pat in (r"(\d+)回(?:攻撃|ダメージ)",r"敵に(\d+)回"):
+        m=re.search(pat,sentence)
+        if m:hits=int(m.group(1));break
+    dur=re.search(r"(\d+)ターン",sentence)
+    cond={}
+    if any(x in sentence for x in ("場合","時","たびに","前","後")):cond["conditional"]=True
+    mag={"percent_values":vals}
+    if hits:mag["hits"]=hits
+    return {"effect_type":etype,"mechanic_key":mechanic,"polarity":polarity,"target":target_from_japanese(sentence),"magnitude":mag,"condition":cond,"timing":{"duration_rounds":int(dur.group(1))} if dur else {},"extension":{"source_sentence":clean(sentence),"source_language":"ja"}}
+
+
+def normalize_japanese(text):
+    out=[]
+    sentences=[clean(x) for x in re.split(r"(?<=[。！？])|\n+",clean(text)) if clean(x)]
+    for s in sentences:
+        if "ダメージ" in s:
+            mech="piercing_damage" if "貫通ダメージ" in s else ("physical_damage" if "物理ダメージ" in s else ("magic_damage" if "法術ダメージ" in s else "damage"))
+            out.append(jp_effect(s,"damage",mech,"negative"))
+        if re.search(r"(?:HP[^。]{0,35}?回復|HPを[^。]{0,25}?回復|回復して復活|HPを回復)",s) and not any(x in s for x in ("回復不可","回復できない","HP回復不可")):
+            out.append(jp_effect(s,"heal","healing","positive"))
+        if "復活" in s:
+            out.append(jp_effect(s,"revive","revive","positive"))
+        if "強化効果" in s and any(x in s for x in ("消去","解除","奪い取","減ら")):
+            out.append(jp_effect(s,"dispel","buff","negative"))
+        if "状態異常" in s and any(x in s for x in ("消去","解除","残りターン数-")):
+            out.append(jp_effect(s,"cleanse","status_effect","positive"))
+        if any(x in s for x in ("戦闘不能になるダメージ無効","HPが1以下にならない","HPは1以下にならない")):
+            out.append(jp_effect(s,"immunity","death_prevention","positive"))
+        if "ダメージ無効化" in s and "無視" not in s:
+            out.append(jp_effect(s,"immunity","damage_immunity","positive"))
+        if any(x in s for x in ("回復不可","HP回復不可","HPを回復できない")):
+            out.append(jp_effect(s,"debuff","heal_block","negative"))
+        checks=[
+          (r"攻撃力[^。]{0,24}(?:\+|上昇)", "buff","attack_up","positive"),
+          (r"攻撃力[^。]{0,24}(?:-|低下)", "debuff","attack_down","negative"),
+          (r"防御力[^。]{0,24}(?:\+|上昇)", "buff","defense_up","positive"),
+          (r"防御力[^。]{0,24}(?:-|低下)", "debuff","defense_down","negative"),
+          (r"(?<!被)ダメージ[^。]{0,18}(?:\+|上昇)", "buff","damage_up","positive"),
+          (r"被ダメージ[^。]{0,24}(?:-|低下)", "buff","damage_reduction","positive"),
+          (r"被ダメージ[^。]{0,24}(?:\+|上昇)", "debuff","damage_taken_up","negative"),
+          (r"会心率[^。]{0,18}(?:\+|上昇)", "buff","crit_rate_up","positive"),
+          (r"会心ダメージ[^。]{0,18}(?:\+|上昇)", "buff","crit_damage_up","positive"),
+          (r"命中率[^。]{0,18}(?:\+|上昇)", "buff","hit_rate_up","positive"),
+          (r"回避率?[^。]{0,18}(?:\+|上昇)", "buff","dodge_up","positive"),
+          (r"ブロック率?[^。]{0,18}(?:\+|上昇)", "buff","block_rate_up","positive"),
+          (r"(?:防御貫通|防護貫通|徹甲)[^。]{0,18}(?:\+|上昇)", "buff","penetration_up","positive"),
+          (r"HP吸収[^。]{0,18}(?:\+|上昇)", "buff","lifesteal_up","positive"),
+          (r"状態異常耐性[^。]{0,18}(?:\+|上昇)", "buff","status_resist_up","positive"),
+          (r"HP上限[^。]{0,18}(?:\+|上昇)", "buff","hp_up","positive"),
+        ]
+        for pat,et,mk,pol in checks:
+            if re.search(pat,s):out.append(jp_effect(s,et,mk,pol))
+        if "シールド" in s or re.search(r"[聖魔魂]甲",s):
+            out.append(jp_effect(s,"shield","shield","positive"))
+        if "落桜" in s:
+            if any(x in s for x in ("付与","獲得","回復する")):out.append(jp_effect(s,"resource_generate","sakura_petals","positive"))
+            if any(x in s for x in ("失う","奪い取","消去","減少")):out.append(jp_effect(s,"resource_consume","sakura_petals","negative"))
+        if "追加" in s and "スキル" in s and "発動" in s:
+            out.append(jp_effect(s,"trigger","extra_skill_cast","positive"))
+        if "無視" in s and any(x in s for x in ("ダメージ無効","防御","防護","被会心ダメージ低下")):
+            out.append(jp_effect(s,"counter","defensive_immunity","positive"))
+        if "会心" in s and any(x in s for x in ("発動しない","発動不可","会心になら")):
+            out.append(jp_effect(s,"debuff","crit_disable","negative"))
+    ded=[];seen=set()
+    for e in out:
+        key=(e["effect_type"],e["mechanic_key"],json.dumps(e.get("target",{}),sort_keys=True),e["extension"].get("source_sentence"))
+        if key not in seen:seen.add(key);ded.append(e)
+    return ded
+
+
+def normalize_source_text(text):
+    effects=normalize_english(text)
+    if not effects and re.search(r"[ぁ-んァ-ヶ一-龯]",clean(text)):
+        effects=normalize_japanese(text)
+    return effects
+
+
 def skill_type_from_api(skill):
     return {1:"normal",2:"active",3:"passive",4:"passive"}.get(skill.get("type"),"skill")
 
@@ -238,7 +330,7 @@ def api_skills(detail):
         sig=(s.get("id"),name,desc)
         if sig in seen:continue
         seen.add(sig)
-        rows.append({"skill_key":"kaisen:"+str(s.get("id") or i),"name":name,"skill_type":skill_type_from_api(s),"description_source":desc,"source_site":"Kaisen Wiki","source_skill_id":s.get("id"),"versions":[{"effects":normalize_english(desc)}]})
+        rows.append({"skill_key":"kaisen:"+str(s.get("id") or i),"name":name,"skill_type":skill_type_from_api(s),"description_source":desc,"source_site":"Kaisen Wiki","source_skill_id":s.get("id"),"versions":[{"effects":normalize_source_text(desc)}]})
     return rows
 
 
