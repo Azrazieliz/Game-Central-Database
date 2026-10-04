@@ -420,16 +420,22 @@ def compute_rankings(entities,subs):
     for mode,weights in MODE_WEIGHTS.items():
         chosen={};optimized_raw={}
         for e in eligible:
-            soul_opts=[None]+compatible_souls(e,subs);spirit_opts=[None]+compatible_spirits(e,subs);mount_opts=[None]+compatible_mounts(e,subs)
-            best=(-1,None,None);combos=0
-            for so in soul_opts:
-                for sp in spirit_opts:
-                    for mo in mount_opts:
-                        extras=[x for x in (so,sp,mo) if x];vec=feature_vector(e,extras);combos+=1
-                        score=sum(weights[f]*percentile_value(base_sorted[f],vec[f]) for f in FEATURES)/sum(weights.values())
-                        if score>best[0]:best=(score,extras,vec)
-            chosen[e["id"]]={"selection_score_vs_base_population":round(best[0]*100,3),"subsystems":[{"type":x["subsystem_type"],"key":x["subsystem_key"],"name":x["name"],"compatibility":x.get("compatibility")} for x in best[1]],"combinations_evaluated":combos}
-            optimized_raw[e["id"]]=best[2]
+            # Transparent slot-wise optimization.  Exhaustive Soul × Spirit × Mount
+            # search grows unnecessarily large; instead each slot is added in a fixed
+            # documented order and accepted only when it improves the same mode score.
+            selected=[];evaluated=0
+            def score_vec(vec):
+                return sum(weights[f]*percentile_value(base_sorted[f],vec[f]) for f in FEATURES)/sum(weights.values())
+            current_vec=feature_vector(e,selected);current_score=score_vec(current_vec)
+            for slot_options in (compatible_souls(e,subs),compatible_spirits(e,subs),compatible_mounts(e,subs)):
+                slot_best=(current_score,None,current_vec)
+                for candidate in slot_options:
+                    vec=feature_vector(e,selected+[candidate]);evaluated+=1;score=score_vec(vec)
+                    if score>slot_best[0]:slot_best=(score,candidate,vec)
+                if slot_best[1] is not None:
+                    selected.append(slot_best[1]);current_score=slot_best[0];current_vec=slot_best[2]
+            chosen[e["id"]]={"selection_score_vs_base_population":round(current_score*100,3),"subsystems":[{"type":x["subsystem_type"],"key":x["subsystem_key"],"name":x["name"],"compatibility":x.get("compatibility")} for x in selected],"candidates_evaluated":evaluated,"optimization_order":["soul","martial_spirit","mount"]}
+            optimized_raw[e["id"]]=current_vec
         for profile,raws in (("base",base_raw),("optimized_subsystems",optimized_raw)):
             norms={f:percentile_map({eid:vec[f] for eid,vec in raws.items()}) for f in FEATURES}
             scored=[]
@@ -442,7 +448,7 @@ def compute_rankings(entities,subs):
             scored.sort(key=lambda x:(-x[0],x[1]["id"]));n=len(scored);rows=[]
             for pos,(score,e,factors) in enumerate(scored,1):
                 p=1-(pos-1)/(n-1) if n>1 else 1;loadout=chosen[e["id"]] if profile=="optimized_subsystems" else None
-                evidence={"formula_version":"kaisen-system-scaling-v1","source_tiers_used":False,"profile":profile,"loadout":loadout,"scaling_notes":["Percent/stat effects are parsed from sourced kit/subsystem descriptions.","Flat +Lv effects are retained as evidence but excluded from percentage scaling when level/base-stat context is unavailable.","Optimized profile searches compatible Soul + Martial Spirit + Mount combinations and then reranks the resulting mechanic vectors across the population.","Mount compatibility is treated as universal only because current Kaisen mount detail exposes no per-character restriction; this assumption is recorded on every mount."]}
+                evidence={"formula_version":"kaisen-system-scaling-v1","source_tiers_used":False,"profile":profile,"loadout":loadout,"scaling_notes":["Percent/stat effects are parsed from sourced kit/subsystem descriptions.","Flat +Lv effects are retained as evidence but excluded from percentage scaling when level/base-stat context is unavailable.","Optimized profile selects compatible Soul → Martial Spirit → Mount slot-by-slot using the same mode score, records every selected item, then reranks the resulting mechanic vectors across the population.","Mount compatibility is treated as universal only because current Kaisen mount detail exposes no per-character restriction; this assumption is recorded on every mount."]}
                 e["analysis"].append({"ranking_key":"codex_analytical","title":f"Codex analytical tier — {mode} — {profile}","mode_key":mode,"profile_key":profile,"tier_label":tier(p),"rank_order":pos,"total_score":round(score,3),"percentile":round(p,6),"confidence":round(min(1.0,0.55+len(e.get('skills',[]))/12),3),"factors_json":json.dumps(factors,ensure_ascii=False),"evidence_json":json.dumps(evidence,ensure_ascii=False),"selected_subsystems":loadout["subsystems"] if loadout else [],"source_tiers_used":False})
                 rows.append({"entity_id":e["id"],"name":e["canonical_name"],"tier":tier(p),"rank_order":pos,"score":round(score,3),"profile_key":profile,"selected_subsystems":loadout["subsystems"] if loadout else []})
             result_lists.append({"ranking_key":"codex_analytical","mode_key":mode,"profile_key":profile,"source_tiers_used":False,"entries":rows})
