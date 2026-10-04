@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 from PIL import Image
 from pypinyin import lazy_pinyin
 from pykakasi import kakasi
@@ -149,36 +149,43 @@ def lines_between(soup,start_pat,end_pat):
 def looks_desc(s):
     return len(s)>=12 and any(m in s for m in DESC_MARKERS)
 
-def parse_skill_lines(lines):
-    skills=[]; cat=None; i=0; ordinal=0
-    skip={"---","目次"}
-    while i<len(lines):
-        line=clean(lines[i])
-        if line in CAT_MARKERS:
-            cat=CAT_MARKERS[line]; i+=1; continue
-        if not cat or not line or line in skip or line.endswith("のアイコン"):
-            i+=1; continue
-        if len(line)>70 or looks_desc(line):
-            i+=1; continue
-        name=line
-        j=i+1; parts=[]
-        while j<len(lines):
-            nxt=clean(lines[j])
-            if nxt in CAT_MARKERS: break
-            if nxt in skip or nxt.endswith("のアイコン"):
-                j+=1; continue
-            if parts and len(nxt)<=60 and not looks_desc(nxt) and j+1<len(lines) and looks_desc(lines[j+1]):
-                break
-            parts.append(nxt)
-            if looks_desc(" ".join(parts)):
-                if j+1>=len(lines) or lines[j+1] in CAT_MARKERS or (len(lines[j+1])<=60 and j+2<len(lines) and looks_desc(lines[j+2])):
-                    j+=1; break
-            j+=1
+def parse_skills_dom(soup):
+    skill_h2=next((h for h in soup.find_all("h2") if clean(h.get_text(" ",strip=True)).endswith("のスキル")),None)
+    if not skill_h2:return []
+    skills=[];cat=None;current=None;parts=[];ordinal=0
+
+    def finish():
+        nonlocal current,parts,ordinal
+        if not current:return
         desc=clean(" ".join(parts))
         if looks_desc(desc):
-            skills.append({"skill_key":f"{cat}.{ordinal}","name":name,"skill_type":cat,"description_source":desc})
-            ordinal+=1; i=max(j,i+1)
-        else:i+=1
+            skills.append({"skill_key":f"{cat or 'unknown'}.{ordinal}","name":current,"skill_type":cat or "unknown","description_source":desc})
+            ordinal+=1
+        current=None;parts=[]
+
+    for node in skill_h2.next_elements:
+        if isinstance(node,Tag) and node is not skill_h2 and node.name=="h2":
+            finish();break
+        if isinstance(node,Tag) and node.name=="h3":
+            finish()
+            heading=clean(node.get_text(" ",strip=True))
+            cat=CAT_MARKERS.get(heading,cat)
+            continue
+        if isinstance(node,Tag) and node.name=="img":
+            alt=clean(node.get("alt"))
+            if alt.endswith("のアイコン"):
+                finish()
+                current=alt[:-len("のアイコン")].strip()
+                parts=[]
+            continue
+        if isinstance(node,NavigableString) and current:
+            # Heading and image-alt text are handled structurally; only retain actual
+            # prose after the skill marker.
+            if node.find_parent(["h2","h3"]):continue
+            t=clean(str(node))
+            if not t or t in {"---",current} or t.endswith("のアイコン"):continue
+            parts.append(t)
+    finish()
     return skills
 
 def infer_target(s):
@@ -315,7 +322,7 @@ def parse_game8_page(sess,item):
     source_name=clean(basic.get("スキン名") or item["catalog_name"])
     source_name=re.sub(r"（(?:UR[＋+](?:2026)?|UR|SSR|SR|R)）","",source_name).strip()
     lines=lines_between(soup,r"のスキル$",r"の絆$")
-    skills=parse_skill_lines(lines)
+    skills=parse_skills_dom(soup)
     for s in skills:s["versions"]=[{"effects":normalize_effects(s["description_source"])}]
     relationships=[]
     hs=soup.find_all(["h2","h3"])
