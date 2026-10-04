@@ -1,0 +1,100 @@
+name: Finalize Kaisen v0.7.1
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'finalize_trigger/**'
+      - '.github/workflows/finalize-kaisen-v071.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11'
+      - name: Install Android platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Python dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet beautifulsoup4 pillow
+      - name: Restore validated v0.7.0 full pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ART_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=game-codex-shoujo-kaisen-pack-v0.7.0&per_page=100" --jq '.artifacts | map(select(.expired==false)) | sort_by(.created_at) | last | .id')
+          test -n "$ART_ID"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ART_ID}/zip" > outer.zip
+          mkdir outer work
+          unzip -q outer.zip -d outer
+          unzip -q outer/Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip -d work
+          test -f work/codex/data/catalog.json
+      - name: Complete Japanese Kaisen normalization and rerank
+        run: |
+          python3 tools/postprocess_kaisen_catalog.py --out work/codex
+          python3 - <<'PY'
+          import json
+          c=json.load(open('work/codex/data/catalog.json'))
+          r=json.load(open('work/codex/kaisen-system-enrichment-report.json'))
+          assert len(c['entities']) == 528
+          assert r['heroes_ranked_with_subsystems'] == 528, r
+          assert r['souls_logical_sets'] == 25, r
+          assert r['martial_spirits'] == 64, r
+          assert r['mounts'] == 14, r
+          assert r['source_tiers_used_for_analysis'] is False
+          h=next(e for e in c['entities'] if e['canonical_name']=='Hua Mulan')
+          assert len(h['skills']) >= 6
+          assert any(a.get('profile_key')=='optimized_subsystems' for a in h['analysis'])
+          print('FINAL_VALIDATION_OK',r['heroes_ranked_with_subsystems'],len(c['subsystems']))
+          PY
+      - name: Package full portable pack
+        run: |
+          cd work
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip" codex
+          cd "$GITHUB_WORKSPACE"
+          sha256sum Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip > Game-Codex-Shoujo-Kaisen-pack-v0.7.1.sha256
+      - name: Prepare Android offline assets
+        run: |
+          rm -rf android/app/src/main/assets/codex
+          cp -a work/codex android/app/src/main/assets/codex
+          rm -rf android/app/src/main/assets/codex/raw android/app/src/main/assets/codex/research
+          rm -f android/app/src/main/assets/codex/data/catalog.json
+          rm -f android/app/src/main/assets/codex/identity-match-report.json
+          rm -f android/app/src/main/assets/codex/source-sync-report.json
+          rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
+          sed -i "s/versionCode 10/versionCode 11/" android/app/build.gradle
+          sed -i "s/versionName '0.7.0'/versionName '0.7.1'/" android/app/build.gradle
+      - name: Build APK
+        run: gradle -p android :app:assembleDebug --stacktrace
+      - name: Stage APK
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v0.7.1.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v0.7.1.apk > Game-Codex-Shoujo-Kaisen-v0.7.1.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v0.7.1.apk Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-codex-shoujo-kaisen-apk-v0.7.1
+          path: |
+            Game-Codex-Shoujo-Kaisen-v0.7.1.apk
+            Game-Codex-Shoujo-Kaisen-v0.7.1.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-codex-shoujo-kaisen-pack-v0.7.1
+          path: |
+            Game-Codex-Shoujo-Kaisen-pack-v0.7.1.zip
+            Game-Codex-Shoujo-Kaisen-pack-v0.7.1.sha256
+          if-no-files-found: error
