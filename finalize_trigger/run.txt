@@ -2,3 +2,4 @@ v0.7.1-complete-japanese-normalization
 v0.8.0-branded-ui
 v0.8.0-no-tier-primary-ui
 v0.8.0-final-mobile-ui
+v0.8.0-fast-art-final
