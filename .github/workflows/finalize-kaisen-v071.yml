@@ -62,7 +62,7 @@ jobs:
           assert r['source_tiers_used_for_analysis'] is False
           assert c['analysis_policy']['status'] == 'experimental'
           broken=next(e for e in c['entities'] if e['canonical_name']=='Action failed')
-          assert broken.get('display_name','').startswith('Wen Zhong'), broken
+          assert broken.get('display_name') == 'Wen Zhong', broken
           abyss=next(e for e in c['entities'] if e['canonical_name']=='Abyss - The Last Apostle')
           lore=next(s for s in abyss['skills'] if s.get('name')=='Neverending Nightmare')
           assert lore.get('presentation_class') == 'source_note', lore
