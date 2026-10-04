@@ -571,21 +571,31 @@ def main():
         matches.append({"entity_id":e["id"],"canonical_name":e["canonical_name"],"game8_name":p["catalog_name"],"url":p["url"],"confidence":round(confidence,3),"method":method,"skills":len(e["skills"])})
         (raw/f"game8-{urlparse(p['url']).path.rsplit('/',1)[-1]}.html").write_text(p["html"],encoding="utf-8")
     print(json.dumps({"kaisen_entities":len(entities),"game8_discovered":len(catalog),"game8_fetched":len(pages),"mapped":len(matches),"unmatched":len(unmatched),"with_skills":sum(bool(e["skills"]) for e in entities)},ensure_ascii=False),flush=True)
-    # visuals
-    for i,e in enumerate(entities,1):
-        if not any(x.get("display_role")=="grid_card" for x in e["images"]):
+    # visuals: the validated baseline already carries card tiles. Download Game8
+    # detail art concurrently so the build does not serialize hundreds of image requests.
+    for e in entities:
+        if not any(x.get("display_role")=="grid_card" for x in e["images"]) and e.get("asset_url"):
             try:
                 m=save_image(sess,e["asset_url"],assets,e["entity_key"]+"-card",900,KAISEN_HEROES)
                 if m:e["images"].append({"id":e["id"]*10+1,"image_key":e["entity_key"]+"-card","asset_type":"card","display_role":"grid_card","priority":100,"source_url":e["asset_url"],**m})
-            except Exception as ex:pass
-        furl=e.pop("_full_art_url",None)
-        if furl:
-            try:
-                m=save_image(sess,furl,assets,e["entity_key"]+"-full",1600,e.get("source_urls",{}).get("game8"))
-                if m and m.get("height",0)>m.get("width",0):
-                    e["images"].append({"id":e["id"]*10+2,"image_key":e["entity_key"]+"-full","asset_type":"full_art","display_role":"detail_primary","priority":100,"source_url":furl,**m})
             except Exception:pass
-        if i%80==0:print(f"ASSETS {i}/{len(entities)}",flush=True)
+
+    full_jobs=[(e,e.pop("_full_art_url",None)) for e in entities]
+    full_jobs=[(e,u) for e,u in full_jobs if u]
+    def full_worker(pair):
+        e,u=pair
+        try:
+            s=session()
+            m=save_image(s,u,assets,e["entity_key"]+"-full",1600,e.get("source_urls",{}).get("game8"))
+            return e["id"],u,m
+        except Exception:
+            return e["id"],u,None
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(4,args.workers)) as ex:
+        for i,(eid,u,m) in enumerate(ex.map(full_worker,full_jobs),1):
+            if m and m.get("height",0)>m.get("width",0):
+                e=byid[eid]
+                e["images"].append({"id":e["id"]*10+2,"image_key":e["entity_key"]+"-full","asset_type":"full_art","display_role":"detail_primary","priority":100,"source_url":u,**m})
+            if i%50==0:print(f"FULL_ART {i}/{len(full_jobs)}",flush=True)
     compute_analysis(entities)
     for e in entities:e["role_key"]=infer_role(e)
     edges=compatibility(entities)
