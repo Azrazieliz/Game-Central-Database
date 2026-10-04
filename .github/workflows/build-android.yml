@@ -45,6 +45,9 @@ jobs:
       - name: Install data builder dependencies
         run: python3 -m pip install --disable-pip-version-check --quiet requests beautifulsoup4 pillow pypinyin pykakasi numpy opencv-python-headless
 
+      - name: Inspect Kaisen source structure
+        run: python3 tools/inspect_kaisen_structure.py
+
       - name: Restore validated Kaisen catalogue baseline
         env:
           GH_TOKEN: ${{ github.token }}
