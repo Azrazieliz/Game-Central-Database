@@ -35,3 +35,22 @@ These are durable project rules and supersede implementation shortcuts.
 - An Android milestone is not considered an app release unless an installable signed APK is produced.
 - The Android app is a generic Codex shell and consumes portable local packs.
 - Offline browsing must work after the pack is installed/imported.
+
+
+## User-facing UI rules
+- The Android app is a real mobile product, not a debug browser. Internal layer labels, ontology keys, raw compatibility coefficients, generated timestamps, source-tier internals, and raw JSON must never dominate the normal browsing flow.
+- The default flow is: Game library -> selected game -> compact searchable database -> visual character card -> readable character detail.
+- Filters live in a compact sheet on mobile; they do not permanently consume the screen.
+- Every route transition must reset horizontal document scroll. The document itself must never become wider than the viewport; only intentionally scrollable local components may scroll horizontally.
+- Character cards do not display an authoritative Codex tier while the analytical model is experimental.
+- Experimental analysis may appear inside character details only with a clear experimental label and without false precision such as arbitrary 45.03/100 power scores.
+- Compatibility must be presented as named teammates/counters plus readable mechanic reasons. Raw graph coefficients belong only in technical audit data.
+- Raw ontology keys such as status:* or snake_case mechanic IDs are never primary user-facing labels.
+- Import/update controls and audit/provenance data live in Settings/Sources, not in the primary character browsing flow.
+- The app has durable Game Codex branding, including the Android launcher icon and in-app brand mark.
+
+## Presentation/data sanitation
+- Error strings, placeholders, failed-source labels, and source implementation messages must not appear as naked canonical display names. Preserve the original sourced field for provenance, but derive a safe display label from the same Kaisen identity family when possible.
+- A source record labelled as a skill is not automatically a gameplay mechanic. Long narrative/lore entries with no normalized effects are quarantined as source notes and excluded from positive analytical evidence.
+- Unparsed source entries remain visible only in an explicitly labelled source/unparsed disclosure; do not silently pretend they were understood.
+- Kaisen-native full illustrations are preferred for character detail pages. Game8/in-game captures remain alternates when a cleaner sourced Kaisen illustration exists.
