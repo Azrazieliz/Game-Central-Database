@@ -131,13 +131,13 @@ def main():
     ranked=sum(1 for e in entities if effect_count(e)>0)
     report_path=root/"kaisen-system-enrichment-report.json"
     report=json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
-    report.update({"engine_version":"0.9.0","bilingual_skill_refresh_characters":repaired,"skills_reparsed":skill_repairs,"zero_effect_skills_before_refresh":zero_effect_skills_before,"zero_effect_skills_after_refresh":zero_effect_skills_after,"heroes_ranked_with_subsystems":ranked,"source_tiers_used_for_analysis":False,"display_name_fixes":display_name_fixes,"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed})
+    report.update({"engine_version":"0.9.0","bilingual_skill_refresh_characters":repaired,"skills_reparsed":skill_repairs,"zero_effect_skills_before_refresh":zero_effect_skills_before,"zero_effect_skills_after_refresh":zero_effect_skills_after,"heroes_with_normalized_effects":ranked,"source_tiers_used_for_analysis":False,"display_name_fixes":display_name_fixes,"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed})
     if cat.get("games"):
         cat["games"][0]["data_report"]={**(cat["games"][0].get("data_report") or {}),**report}
     p.write_text(json.dumps(cat,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
     (data/"catalog.js").write_text("window.CODEX_CATALOG="+json.dumps(cat,ensure_ascii=False,separators=(",",":"))+";",encoding="utf-8")
     report_path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
-    print(json.dumps({"repaired_characters":len(repaired),"skills_reparsed":skill_repairs,"zero_effect_skills_before":zero_effect_skills_before,"zero_effect_skills_after":zero_effect_skills_after,"heroes_ranked_with_subsystems":ranked,"display_name_fixes":len(display_name_fixes),"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed,"repaired":repaired},ensure_ascii=False))
+    print(json.dumps({"repaired_characters":len(repaired),"skills_reparsed":skill_repairs,"zero_effect_skills_before":zero_effect_skills_before,"zero_effect_skills_after":zero_effect_skills_after,"heroes_with_normalized_effects":ranked,"display_name_fixes":len(display_name_fixes),"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed,"repaired":repaired},ensure_ascii=False))
     if ranked < 528:
         missing=[e["canonical_name"] for e in cat.get("entities") or [] if not any(a.get("ranking_key")=="codex_analytical" and a.get("profile_key")=="optimized_subsystems" and a.get("tier_label")!="UNRANKED" for a in e.get("analysis",[]))]
         raise SystemExit("Characters without normalized effects after fallback: "+json.dumps(missing,ensure_ascii=False))
