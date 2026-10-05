@@ -260,3 +260,6 @@ h1,h2,h3,h4,p{margin-top:0}
 .loadout-slot{border:0;color:inherit}
 .compat-card{border:0;color:inherit;text-align:left;width:100%}
 @media(min-width:700px){.team-cards{grid-template-columns:repeat(6,minmax(0,1fr))}.scenario-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.team-controls{grid-template-columns:repeat(4,minmax(0,1fr))}.team-controls .primary-button{grid-column:auto}}
+
+.locked-members{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;min-height:30px;align-items:center}.locked-chip{border:1px solid rgba(167,139,250,.28);background:rgba(139,92,246,.1);color:#e8e1ff;border-radius:999px;padding:6px 8px;font-size:9px}.team-lock-select{min-width:0}
+.roster-value{margin-bottom:14px}.account-value-list{display:grid;gap:6px;max-height:420px;overflow:auto}.account-value-row{display:grid;grid-template-columns:34px 44px 1fr;gap:8px;align-items:center;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:7px}.account-value-row>img{width:44px;height:58px;object-fit:cover;border-radius:8px}.account-value-row strong{display:block;font-size:11px}.account-value-row span{display:block;font-size:9px;color:var(--muted);margin-top:2px}.account-value-row small{display:block;font-size:9px;color:var(--cyan);margin-top:3px}
