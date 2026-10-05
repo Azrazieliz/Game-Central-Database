@@ -1,0 +1,80 @@
+{
+  "adapter_version": "1.0.0",
+  "game_key": "shoujo_kaisen",
+  "display_name": "Shoujo Kaisen",
+  "team_size": 6,
+  "canonical_name_source": "Kaisen Wiki",
+  "source_tiers_are_inputs": false,
+  "modes": {
+    "pvp_opening": {
+      "label": "PvP Opening",
+      "description": "First-turn and early-fight pressure.",
+      "axis_weights": {"offense":0.20,"tempo":0.22,"survivability":0.08,"control":0.14,"support":0.08,"disruption":0.13,"reliability":0.10,"independence":0.03,"synergy_ceiling":0.01,"counter_resilience":0.01}
+    },
+    "pvp_sustained": {
+      "label": "PvP Sustained",
+      "description": "Longer competitive fights after the opening exchange.",
+      "axis_weights": {"offense":0.14,"tempo":0.12,"survivability":0.16,"control":0.12,"support":0.10,"disruption":0.12,"reliability":0.08,"independence":0.04,"synergy_ceiling":0.05,"counter_resilience":0.07}
+    },
+    "boss": {
+      "label": "Boss",
+      "description": "Single-target, long-duration boss performance.",
+      "axis_weights": {"offense":0.30,"tempo":0.10,"survivability":0.12,"control":0.02,"support":0.14,"disruption":0.05,"reliability":0.12,"independence":0.07,"synergy_ceiling":0.05,"counter_resilience":0.03}
+    },
+    "general_pve": {
+      "label": "General PvE",
+      "description": "Story, trials and mixed-wave content.",
+      "axis_weights": {"offense":0.20,"tempo":0.13,"survivability":0.12,"control":0.09,"support":0.13,"disruption":0.07,"reliability":0.11,"independence":0.07,"synergy_ceiling":0.04,"counter_resilience":0.04}
+    },
+    "low_investment": {
+      "label": "Low Investment",
+      "description": "Base-kit value without optimized premium subsystems.",
+      "profile": "base",
+      "axis_weights": {"offense":0.17,"tempo":0.12,"survivability":0.14,"control":0.09,"support":0.12,"disruption":0.08,"reliability":0.13,"independence":0.10,"synergy_ceiling":0.02,"counter_resilience":0.03}
+    },
+    "max_investment": {
+      "label": "Max Investment",
+      "description": "Ceiling with compatible optimized Soul, Martial Spirit and Mount.",
+      "profile": "optimized",
+      "axis_weights": {"offense":0.19,"tempo":0.13,"survivability":0.13,"control":0.08,"support":0.11,"disruption":0.08,"reliability":0.08,"independence":0.03,"synergy_ceiling":0.12,"counter_resilience":0.05}
+    }
+  },
+  "axes": {
+    "offense": {"label":"Offensive pressure","reference":6500,"description":"Damage coefficients, target breadth, hit count, true/piercing damage and offensive amplification."},
+    "tempo": {"label":"Tempo / action economy","reference":7,"description":"Extra casts/actions, pre-turn triggers, resource acceleration and repeat activation."},
+    "survivability": {"label":"Survivability","reference":12,"description":"Healing, shields, reduction, immunity, death prevention, revive, HP and defense."},
+    "control": {"label":"Control","reference":9,"description":"Hard/soft control, duration, breadth and repeat application."},
+    "support": {"label":"Support","reference":12,"description":"Team buffs, healing, shielding, cleanse, resource support and ally targeting."},
+    "disruption": {"label":"Disruption / counterplay","reference":10,"description":"Dispel, anti-heal, defense bypass, buff removal, resource denial and immunity bypass."},
+    "reliability": {"label":"Reliability","reference":1,"description":"How much of the kit works without fragile conditions, RNG or setup."},
+    "independence": {"label":"Independence","reference":1,"description":"Self-enabling mechanics, self-sustain and low dependency on specific allies."},
+    "synergy_ceiling": {"label":"Synergy ceiling","reference":12,"description":"Number and strength of mechanics that compound with compatible allies/subsystems."},
+    "counter_resilience": {"label":"Counter resilience","reference":10,"description":"Cleanse, resist, immunity, redundancy, revive and ability to keep functioning under disruption."}
+  },
+  "grade_thresholds": [
+    {"min":90,"grade":"S+"},
+    {"min":80,"grade":"S"},
+    {"min":68,"grade":"A"},
+    {"min":55,"grade":"B"},
+    {"min":40,"grade":"C"},
+    {"min":0,"grade":"D"}
+  ],
+  "subsystems": {
+    "soul": {"compatibility":"profession"},
+    "martial_spirit": {"compatibility":"explicit_character_list"},
+    "mount": {"compatibility":"universal_unless_source_restricts"}
+  },
+  "team_optimizer": {
+    "team_size": 6,
+    "candidate_pool": 48,
+    "beam_width": 120,
+    "synergy_bonus_cap": 15,
+    "coverage_bonus_cap": 12,
+    "duplicate_profile_penalty_cap": 8
+  },
+  "notes": [
+    "Axis scores use stable game-adapter benchmarks, not roster percentiles.",
+    "Grades use fixed absolute thresholds; no tier has a roster quota.",
+    "Source/community tier lists are retained only as reference data and never feed evaluation."
+  ]
+}
