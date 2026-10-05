@@ -254,10 +254,14 @@ def jp_status_key(name):
 def stat_percent(sentence,label):
     # Capture the percentage that belongs to this stat rather than unrelated
     # percentages elsewhere in the same source sentence.
+    # label may itself contain alternation (e.g. 会心率|会心値). Group it
+    # non-capturing so an early alternation branch cannot match without the
+    # percentage capture and make re.findall return an empty capture.
+    grouped=rf"(?:{label})"
     patterns=[
-      rf"{label}[^。]{{0,18}}?[+＋]\s*(\d+(?:\.\d+)?)\s*[%％]",
-      rf"{label}[^。]{{0,18}}?[-−]\s*(\d+(?:\.\d+)?)\s*[%％]",
-      rf"{label}[^。]{{0,18}}?(?:上昇|増加|低下|減少)[^0-9]{{0,5}}(\d+(?:\.\d+)?)\s*[%％]",
+      rf"{grouped}[^。]{{0,18}}?[+＋]\s*(\d+(?:\.\d+)?)\s*[%％]",
+      rf"{grouped}[^。]{{0,18}}?[-−]\s*(\d+(?:\.\d+)?)\s*[%％]",
+      rf"{grouped}[^。]{{0,18}}?(?:上昇|増加|低下|減少)[^0-9]{{0,5}}(\d+(?:\.\d+)?)\s*[%％]",
     ]
     vals=[]
     for p in patterns:
