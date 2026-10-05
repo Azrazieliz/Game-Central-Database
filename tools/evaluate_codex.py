@@ -40,15 +40,44 @@ def hero_key(entity):
     while stem and stem[-1].isdigit():stem=stem[:-1]
     return stem
 
-def compatible(entity,subsystems,kind):
+def get_path(obj,path,default=None):
+    cur=obj
+    for part in str(path or "").split("."):
+        if not part:continue
+        if not isinstance(cur,dict) or part not in cur:return default
+        cur=cur[part]
+    return cur
+
+def entity_roles(entity,field=None):
+    if field:
+        vals=get_path(entity,field,[])
+        if vals:return set(vals if isinstance(vals,list) else [vals])
+    vals=(entity.get("adapter_meta") or {}).get("roles") or (entity.get("kaisen_meta") or {}).get("professions") or []
+    if entity.get("role_key"):vals=list(vals)+[entity["role_key"]]
+    return set(vals)
+
+def compatible(entity,subsystems,kind,adapter):
     rows=[s for s in subsystems if s.get("subsystem_type")==kind]
-    if kind=="soul":
-        prof=set((entity.get("kaisen_meta") or {}).get("professions") or [])
-        return [s for s in rows if not s.get("profession_fit") or prof.intersection(s.get("profession_fit") or [])]
-    if kind=="martial_spirit":
+    cfg=((adapter.get("subsystems") or {}).get("types") or {}).get(kind) or {}
+    rule=cfg.get("compatibility") or {}
+    rtype=rule.get("type") if isinstance(rule,dict) else rule
+    if rtype=="profession":
+        roles=entity_roles(entity,rule.get("entity_field") if isinstance(rule,dict) else None)
+        return [s for s in rows if not s.get("profession_fit") or roles.intersection(s.get("profession_fit") or [])]
+    if rtype=="explicit_character_list":
         hk=hero_key(entity)
         return [s for s in rows if hk in set((s.get("compatibility") or {}).get("hero_keys") or [])]
-    return rows
+    if rtype in ("universal","universal_unless_source_restricts",None):
+        return rows
+    # Unknown future rule types are conservative: do not assume compatibility.
+    return []
+
+def optimization_slots(adapter):
+    subs=adapter.get("subsystems") or {}
+    slots=subs.get("optimization_slots") or []
+    if slots:return list(slots)
+    return list((subs.get("types") or {}).keys())
+
 
 def clamp01(x):return max(0.0,min(1.0,float(x)))
 def scale(raw,axis_cfg):
@@ -171,8 +200,8 @@ def analyze_axes(entity,adapter,extras=None):
     self_enable=(self_positive+sum(1 for e in rows if e.get("effect_type")=="resource_generate" and (e.get("target") or {}).get("side") in ("self",None)))/total
     independence=clamp01(0.55*base_reliability+0.45*min(1.0,self_enable*2))
 
-    spirit_count=len(compatible(entity,extras or [],"martial_spirit")) if extras else 0
-    synergy_raw=len(provides)*0.65+team_positive*0.35+len(families)*0.35+min(4,spirit_count)*0.25
+    equipped_count=len(extras or [])
+    synergy_raw=len(provides)*0.65+team_positive*0.35+len(families)*0.35+min(4,equipped_count)*0.25
 
     # Damage pressure is multiplicatively amplified and then the adapter applies
     # its configured transform (log10 for Shoujo Kaisen). This prevents 100000% era
@@ -214,16 +243,13 @@ def grade(score,thresholds):
         if score>=float(row["min"]):return row["grade"]
     return "D"
 
-def loadout_options(entity,subs):
-    return [
-      ("soul",compatible(entity,subs,"soul")),
-      ("martial_spirit",compatible(entity,subs,"martial_spirit")),
-      ("mount",compatible(entity,subs,"mount")),
-    ]
+def loadout_options(entity,subs,adapter):
+    return [(kind,compatible(entity,subs,kind,adapter)) for kind in optimization_slots(adapter)]
+
 
 def optimize_loadout(entity,subs,adapter,weights):
     selected=[];base=analyze_axes(entity,adapter,selected);best_score=axis_score(base,weights);evaluated=0
-    for kind,options in loadout_options(entity,subs):
+    for kind,options in loadout_options(entity,subs,adapter):
         local=(best_score,None,base)
         for candidate in options:
             axes=analyze_axes(entity,adapter,selected+[candidate]);score=axis_score(axes,weights);evaluated+=1
