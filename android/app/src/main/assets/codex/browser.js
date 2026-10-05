@@ -55,12 +55,34 @@ function renderCharacterGrid(ownedOnly=false){
     btn.onclick=()=>location.hash='character/'+e.id;grid.appendChild(n)
   }
 }
+function accountCoverageGain(candidate,owned,mode){
+  const ca=scenarioAxes(candidate,mode),base={};
+  for(const k of axisOrder)base[k]=owned.length?Math.max(...owned.map(e=>Number(scenarioAxes(e,mode)[k]?.score||0))):0;
+  let gain=0;for(const k of ['offense','tempo','survivability','control','support','disruption'])gain+=Math.max(0,Number(ca[k]?.score||0)-base[k]);
+  return gain/6;
+}
+function accountValueRows(mode){
+  const owned=activeGameEntities().filter(e=>isOwned(e.id)),unowned=activeGameEntities().filter(e=>!isOwned(e.id)&&scenario(e,mode)),teamSize=Number(catalog.adapter?.team_size||6);
+  if(owned.length>=teamSize){
+    const ids=owned.map(e=>e.id),baseline=optimizeTeam(mode,null,null,false,[],ids)[0]?.components.total||0;
+    return unowned.map(e=>{const allowed=[...ids,e.id],best=optimizeTeam(mode,e.id,null,false,[],allowed)[0];return {entity:e,value:Math.max(0,(best?.components.total||0)-baseline),baseline,team:best?.ids||[],kind:'team_gain'}}).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
+  }
+  return unowned.map(e=>({entity:e,value:accountCoverageGain(e,owned,mode),kind:'coverage'})).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
+}
+function renderAccountValue(){
+  const host=$('#accountValueList');if(!host)return;const rows=accountValueRows(state.accountMode);
+  if(!rows.length){host.innerHTML='<div class="empty-state"><strong>No recommendations</strong>Your roster already contains every character.</div>';return}
+  host.innerHTML=rows.map((r,i)=>{const e=r.entity,img=chooseImage(e,'grid_card',['card']),sc=scenario(e,state.accountMode);const value=r.kind==='team_gain'?(r.value.toFixed(1)+' team gain'):(r.value.toFixed(1)+' coverage gain');return '<button class="account-value-row" data-id="'+e.id+'><span class="rank-number">#'+(i+1)+'</span>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<div><strong>'+esc(displayName(e))+'</strong><span>'+esc(sc?.grade||'')+' • '+Math.round(Number(sc?.score||0))+' scenario index</span><small>'+esc(value)+'</small></div></button>'}).join('');
+  host.querySelectorAll('.account-value-row').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
+}
 function renderRoster(body){
-  const owned=activeGameEntities().filter(e=>isOwned(e.id));
-  body.innerHTML='<section class="roster-summary"><div><span class="eyebrow">Personal roster</span><h2>'+owned.length+' owned characters</h2><p>Roster state stays local on this device and only affects account-specific planning.</p></div></section><div id="rosterGridHost"></div>';
+  const owned=activeGameEntities().filter(e=>isOwned(e.id));if(!rankingModes()[state.accountMode])state.accountMode=Object.keys(rankingModes())[0]||'general_pve';
+  body.innerHTML='<section class="roster-summary"><div><span class="eyebrow">Personal roster</span><h2>'+owned.length+' owned characters</h2><p>Owned state stays local on this device. Account value measures what an unowned character adds to your current roster under the selected resource/scenario assumption.</p></div></section><section class="panel-section roster-value"><div class="section-head"><div><span class="eyebrow">Account-specific value</span><h2>Best next additions</h2></div><label class="mode-select"><span>Scenario</span><select id="accountMode">'+modeOptions(state.accountMode)+'</select></label></div><p class="muted small">'+(owned.length>=(catalog.adapter?.team_size||6)?'Ranked by improvement to your best roster-constrained team.':'Roster has fewer than '+(catalog.adapter?.team_size||6)+' members, so additions are ranked by missing axis coverage until a full team can be formed.')+'</p><div id="accountValueList" class="account-value-list"></div></section><div id="rosterGridHost"></div>';
+  $('#accountMode').onchange=e=>{state.accountMode=e.target.value;renderAccountValue()};renderAccountValue();
   const host=$('#rosterGridHost');host.innerHTML='<div class="search-row"><label class="search-box"><span>⌕</span><input id="browserSearch" type="search" placeholder="Search owned characters…" value="'+esc(state.query)+'"></label><button class="filter-button" id="filterButton">Filters</button></div><div class="count-row"><span class="result-count" id="resultCount"></span><span class="active-filter-summary" id="filterSummary"></span></div><div id="browserGrid"></div>';
   $('#browserSearch').addEventListener('input',e=>{state.query=e.target.value;renderCharacterGrid(true)});$('#filterButton').onclick=renderFilters;renderCharacterGrid(true);
 }
+
 function renderEquipment(body){
   const types=subsystemTypes();if(!types.some(x=>x.key===state.equipmentKind)&&types.length)state.equipmentKind=types[0].key;body.innerHTML='<div class="segment-row">'+types.map(x=>'<button class="segment '+(state.equipmentKind===x.key?'active':'')+'" data-kind="'+esc(x.key)+'">'+esc(x.label)+'</button>').join('')+'</div>'+searchBar('Search equipment…',false)+'<div class="count-row"><span class="result-count" id="resultCount"></span></div><div id="browserGrid"></div>';
   body.querySelectorAll('.segment').forEach(b=>b.onclick=()=>{state.equipmentKind=b.dataset.kind;state.query='';renderEquipment(body)});
@@ -93,15 +115,16 @@ function teamScore(ids,mode){
   const avgSim=pairs?sim/pairs:0,redundancy=Math.max(0,(avgSim-.82)/.18)*Number(catalog.adapter?.team_optimizer?.duplicate_profile_penalty_cap||8);
   return {total:Math.min(100,Math.max(0,base*.78+synergy+coverage-redundancy)),base,synergy,coverage,redundancy};
 }
-function optimizeTeam(mode,anchorId=null,excludeId=null,ownedOnly=false,fixedIds=[]){
+function optimizeTeam(mode,anchorId=null,excludeId=null,ownedOnly=false,fixedIds=[],allowedIds=null){
   const teamSize=Number(catalog.team_optimizer?.team_size||catalog.adapter?.team_size||6),owned=ownedIds();
   const fixed=[...new Set([...(fixedIds||[]),...(anchorId?[anchorId]:[])])].filter(id=>id!==excludeId);
   if(fixed.length>teamSize)return [];
   if(ownedOnly&&fixed.some(id=>!owned.has(id)))return [];
-  let candidates=activeGameEntities().filter(e=>e.id!==excludeId&&(!ownedOnly||owned.has(e.id))&&scenario(e,mode));
+  const allowed=allowedIds?new Set(allowedIds):null;
+  let candidates=activeGameEntities().filter(e=>e.id!==excludeId&&(!allowed||allowed.has(e.id))&&(!ownedOnly||owned.has(e.id))&&scenario(e,mode));
   candidates.sort((a,b)=>Number(scenario(b,mode)?.score||0)-Number(scenario(a,mode)?.score||0));
   const pool=Number(catalog.team_optimizer?.candidate_pool||48);candidates=candidates.slice(0,pool);
-  for(const id of fixed){if(!candidates.some(e=>e.id===id)){const a=entityById(id);if(a&&a.id!==excludeId&&(!ownedOnly||owned.has(a.id))&&scenario(a,mode))candidates.unshift(a)}}
+  for(const id of fixed){if(!candidates.some(e=>e.id===id)){const a=entityById(id);if(a&&a.id!==excludeId&&(!allowed||allowed.has(a.id))&&(!ownedOnly||owned.has(a.id))&&scenario(a,mode))candidates.unshift(a)}}
   let beams=[fixed];const width=Number(catalog.team_optimizer?.beam_width||120);
   while(beams.length&&beams[0].length<teamSize){
     const next=[];for(const team of beams){for(const e of candidates){if(team.includes(e.id))continue;const ids=[...team,e.id];next.push({ids,score:teamScore(ids,mode).total})}}
