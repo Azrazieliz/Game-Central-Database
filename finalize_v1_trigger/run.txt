@@ -1,1 +1,2 @@
 v1.0.0-production
+v1.0.0-sqlite-composite-fix
