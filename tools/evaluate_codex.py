@@ -387,11 +387,14 @@ def main():
 
     catalog_path.write_text(json.dumps(catalog,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
     (root/"data/catalog.js").write_text("window.CODEX_CATALOG="+json.dumps(catalog,ensure_ascii=False,separators=(",",":"))+";",encoding="utf-8")
+    confidences=[e["codex_evaluation"]["confidence"] for e in entities]
     report={
       "engine_version":"1.0.0","characters":len(entities),"rankings":len(rankings),
       "all_characters_evaluated":sum(1 for e in entities if e.get("codex_evaluation")),
       "source_tiers_used":False,"tier_quota":False,
-      "avg_confidence":round(sum(e["codex_evaluation"]["confidence"] for e in entities)/max(1,len(entities)),3)
+      "avg_confidence":round(sum(confidences)/max(1,len(confidences)),3),
+      "min_confidence":round(min(confidences),3) if confidences else 0.0,
+      "characters_below_0_6_confidence":sum(1 for x in confidences if x<0.6)
     }
     (root/"evaluation-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps(report,ensure_ascii=False))
