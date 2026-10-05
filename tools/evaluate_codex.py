@@ -51,9 +51,16 @@ def compatible(entity,subsystems,kind):
     return rows
 
 def clamp01(x):return max(0.0,min(1.0,float(x)))
-def scale(raw,reference):
+def scale(raw,axis_cfg):
+    reference=float(axis_cfg.get("reference") or 0)
     if reference<=0:return 0.0
-    return min(100.0,max(0.0,100.0*raw/reference))
+    transform=axis_cfg.get("transform","linear")
+    value=max(0.0,float(raw))
+    if transform=="log10":
+        value=math.log10(1.0+value)
+    elif transform=="sqrt":
+        value=math.sqrt(value)
+    return min(100.0,max(0.0,100.0*value/reference))
 
 def analyze_axes(entity,adapter,extras=None):
     rows=effects(entity,extras)
@@ -75,17 +82,25 @@ def analyze_axes(entity,adapter,extras=None):
         if et=="damage":
             hits=max(1.0,float(m.get("hits") or 1))
             mult=1.0
-            if mk in ("true_damage","piercing_damage"):mult=1.15;bypass+=1
-            v=p*hits*b*mult
+            if mk in ("true_damage","piercing_damage"):mult=1.12;bypass+=1
+            # Coefficients can span orders of magnitude and can scale from different
+            # sourced stats. Preserve the source basis as evidence, then compare the
+            # aggregate on the adapter's logarithmic offense scale.
+            coeff=float(m.get("percent") or p or 0)
+            if m.get("percent_min") is not None and m.get("percent_max") is not None:
+                coeff=(float(m["percent_min"])+float(m["percent_max"]))/2
+            v=coeff*hits*b*mult
             direct_damage+=v;families.add("damage")
-            evidence["offense"].append({"mechanic":mk or "damage","value":round(v,2)})
-        if mk in ("attack_up","damage_up","crit_damage_up","crit_rate_up","penetration_up","normal_attack_multiplier"):
+            evidence["offense"].append({"mechanic":mk or "damage","value":round(v,2),"basis":(ef.get("extension") or {}).get("scaling_basis")})
+        if mk in ("attack_up","damage_up","physical_damage_up","magic_damage_up","crit_damage_up","crit_rate_up","penetration_up","normal_attack_multiplier"):
             if mk=="normal_attack_multiplier":
                 val=max(0.0,float(m.get("multiplier") or 1)-1)*100
             else:val=p
-            off_amp+=val
+            # Offensive amplification is applied multiplicatively to sourced damage
+            # pressure instead of being added as a fake damage coefficient.
+            off_amp+=min(val,1000)
             evidence["offense"].append({"mechanic":mk,"value":round(val,2)})
-        if mk in ("defense_ignore","protection_ignore","defensive_immunity"):bypass+=1.5
+        if mk in ("defense_ignore","protection_ignore","defensive_immunity","damage_reduction_ignore","physical_reduction_ignore","magic_reduction_ignore","status_pierce_up"):bypass+=1.0
 
         if et=="trigger" or mk in ("extra_skill_cast","extra_action","action_advance"):
             tempo+=2.0;families.add("tempo");evidence["tempo"].append({"mechanic":mk or et,"value":2.0})
@@ -95,24 +110,26 @@ def analyze_axes(entity,adapter,extras=None):
             tempo+=0.35*b;families.add("resource");evidence["tempo"].append({"mechanic":mk or et,"value":round(0.35*b,2)})
 
         if et in ("heal","shield"):
-            v=1.0+min(p,300)/100*(0.5+0.5*b/6)
+            v=1.0+min(p,500)/125*(0.45+0.55*b/6)
             sustain+=v;families.add("sustain");evidence["survivability"].append({"mechanic":mk or et,"value":round(v,2)})
             if side=="ally":support+=v
         if et=="revive":
-            sustain+=3.0;resilience+=2.0;families.add("sustain")
+            sustain+=3.0;resilience+=2.5;families.add("sustain")
             evidence["survivability"].append({"mechanic":"revive","value":3.0})
         if et=="immunity":
-            sustain+=2.0;resilience+=2.0;families.add("sustain")
-            evidence["counter_resilience"].append({"mechanic":mk or "immunity","value":2.0})
-        if mk in ("hp_up","defense_up","block_rate_up","damage_reduction","lifesteal_up","physical_resist_up","magic_resist_up"):
-            v=min(p,300)/100
+            iv=2.2 if mk in ("death_prevention","damage_immunity","single_hit_damage_cap") else 1.6
+            sustain+=iv;resilience+=iv;families.add("sustain")
+            evidence["counter_resilience"].append({"mechanic":mk or "immunity","value":round(iv,2)})
+        if mk in ("hp_up","defense_up","block_rate_up","damage_reduction","lifesteal_up","physical_resist_up","magic_resist_up","physical_damage_reduction","magic_damage_reduction","crit_damage_reduction"):
+            v=min(p,500)/100
             sustain+=v
             evidence["survivability"].append({"mechanic":mk,"value":round(v,2)})
 
-        if et=="debuff":
-            v=0.8+min(p,200)/200+0.25*(b/6)
-            control+=v;families.add("control");evidence["control"].append({"mechanic":mk or "debuff","value":round(v,2)})
-            provides.add(mk or "debuff")
+        if et in ("debuff","control"):
+            base=1.25 if et=="control" else 0.75
+            v=base+min(p,300)/250+0.35*(b/6)
+            control+=v;families.add("control");evidence["control"].append({"mechanic":mk or et,"value":round(v,2)})
+            provides.add(mk or et)
         if et=="extension" and (ef.get("extension") or {}).get("source_status_name"):
             provides.add(mk or "status")
             control+=0.35
@@ -120,13 +137,14 @@ def analyze_axes(entity,adapter,extras=None):
             control+=0.8
 
         if et=="buff":
-            v=0.5+min(p,300)/250
-            if side=="ally":v*=1.25
-            support+=v;families.add("support");evidence["support"].append({"mechanic":mk or "buff","value":round(v,2)})
+            v=0.45+min(p,500)/300
             provides.add(mk or "buff")
+            # Self buffs strengthen intrinsic axes but are not team support.
+            if side=="ally":
+                support+=v*1.35;families.add("support");evidence["support"].append({"mechanic":mk or "buff","value":round(v*1.35,2)})
         if et=="cleanse":
-            support+=1.4;resilience+=1.3;families.add("support")
-            evidence["support"].append({"mechanic":"cleanse","value":1.4})
+            support+=1.4 if side in ("ally",None) else 0.7;resilience+=1.3;families.add("support")
+            evidence["support"].append({"mechanic":"cleanse","value":1.4 if side in ("ally",None) else 0.7})
         if et=="resource_generate" and side=="ally":
             support+=0.8
         if et=="dispel":
@@ -135,7 +153,7 @@ def analyze_axes(entity,adapter,extras=None):
             disruption+=1.5;families.add("disruption");evidence["disruption"].append({"mechanic":mk or "counter","value":1.5})
         if et=="resource_consume":
             disruption+=1.0
-        if mk in ("heal_block","defense_ignore","protection_ignore","crit_disable","damage_taken_up"):
+        if mk in ("heal_block","defense_ignore","protection_ignore","crit_disable","damage_taken_up","damage_reduction_ignore","physical_reduction_ignore","magic_reduction_ignore","status_pierce_up","status_duration_up"):
             disruption+=1.0
         if et=="cleanse":resilience+=1.1
         if mk in ("status_resist_up","guaranteed_hit","guaranteed_crit"):
@@ -156,8 +174,12 @@ def analyze_axes(entity,adapter,extras=None):
     spirit_count=len(compatible(entity,extras or [],"martial_spirit")) if extras else 0
     synergy_raw=len(provides)*0.65+team_positive*0.35+len(families)*0.35+min(4,spirit_count)*0.25
 
+    # Damage pressure is multiplicatively amplified and then the adapter applies
+    # its configured transform (log10 for Shoujo Kaisen). This prevents 100000% era
+    # coefficients from making every modern attacker identical while preserving order.
+    offense_pressure=max(0.0,direct_damage)*(1.0+min(off_amp,2000)/100.0)*(1.0+0.10*min(bypass,8))
     raw={
-      "offense":direct_damage+off_amp*7.0+bypass*450.0,
+      "offense":offense_pressure,
       "tempo":tempo,
       "survivability":sustain,
       "control":control,
@@ -170,11 +192,13 @@ def analyze_axes(entity,adapter,extras=None):
     }
     result={}
     for axis in AXES:
-        ref=float(adapter["axes"][axis]["reference"])
+        cfg=adapter["axes"][axis]
+        ref=float(cfg["reference"])
         result[axis]={
-          "score":round(scale(raw[axis],ref),2),
+          "score":round(scale(raw[axis],cfg),2),
           "raw":round(raw[axis],4),
           "reference":ref,
+          "transform":cfg.get("transform","linear"),
           "label":adapter["axes"][axis]["label"],
           "evidence":sorted(evidence.get(axis,[]),key=lambda x:-abs(float(x.get("value") or 0)))[:8],
         }
