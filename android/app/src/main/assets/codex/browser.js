@@ -64,8 +64,18 @@ function accountCoverageGain(candidate,owned,mode){
 function accountValueRows(mode){
   const owned=activeGameEntities().filter(e=>isOwned(e.id)),unowned=activeGameEntities().filter(e=>!isOwned(e.id)&&scenario(e,mode)),teamSize=Number(catalog.adapter?.team_size||6);
   if(owned.length>=teamSize){
-    const ids=owned.map(e=>e.id),baseline=optimizeTeam(mode,null,null,false,[],ids)[0]?.components.total||0;
-    return unowned.map(e=>{const allowed=[...ids,e.id],best=optimizeTeam(mode,e.id,null,false,[],allowed)[0];return {entity:e,value:Math.max(0,(best?.components.total||0)-baseline),baseline,team:best?.ids||[],kind:'team_gain'}}).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
+    const ids=owned.map(e=>e.id),baselineTeam=optimizeTeam(mode,null,null,false,[],ids)[0];
+    if(!baselineTeam)return [];
+    const baseline=baselineTeam.components.total,baseIds=baselineTeam.ids;
+    return unowned.map(e=>{
+      let bestScore=baseline,bestIds=baseIds;
+      for(let i=0;i<baseIds.length;i++){
+        const trial=baseIds.slice();trial[i]=e.id;
+        const score=teamScore(trial,mode).total;
+        if(score>bestScore){bestScore=score;bestIds=trial}
+      }
+      return {entity:e,value:Math.max(0,bestScore-baseline),baseline,team:bestIds,kind:'team_gain'};
+    }).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
   }
   return unowned.map(e=>({entity:e,value:accountCoverageGain(e,owned,mode),kind:'coverage'})).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
 }
@@ -96,41 +106,103 @@ function renderEquipmentGrid(){
 function modeOptions(current){return Object.entries(rankingModes()).map(([k,v])=>'<option value="'+esc(k)+'" '+(k===current?'selected':'')+'>'+esc(v.label||k)+'</option>').join('')}
 function renderRankings(body){
   if(!rankingModes()[state.rankingMode])state.rankingMode=Object.keys(rankingModes())[0]||'general_pve';
-  body.innerHTML='<section class="ranking-head"><div><span class="eyebrow">Codex evaluation</span><h2>Character rankings</h2><p>Fixed absolute grades derived from sourced mechanics across explicit axes. No source/community tier is an input and no tier has a quota.</p></div><label class="mode-select"><span>Scenario</span><select id="rankingMode">'+modeOptions(state.rankingMode)+'</select></label></section><div class="axis-legend">'+axisOrder.map(k=>'<span>'+esc(axisLabel(k))+'</span>').join('')+'</div><div id="rankingList" class="ranking-list"></div>';
+  body.innerHTML='<section class="ranking-head"><div><span class="eyebrow">Codex evaluation</span><h2>Character rankings</h2><p>Scenario-specific Codex results from normalized sourced mechanics. Source/community tiers never enter the score.</p></div><label class="mode-select"><span>Scenario</span><select id="rankingMode">'+modeOptions(state.rankingMode)+'</select></label></section><div id="rankingList" class="ranking-list"></div>';
   $('#rankingMode').onchange=e=>{state.rankingMode=e.target.value;renderRankings(body)};
   const r=rankingFor(state.rankingMode),list=$('#rankingList');if(!r){list.innerHTML='<div class="empty-state"><strong>No ranking data</strong>This adapter has no evaluation for that scenario.</div>';return}
   list.innerHTML=(r.entries||[]).map(row=>{const e=entityById(row.entity_id),img=chooseImage(e,'grid_card',['card','portrait','icon']),axes=scenarioAxes(e,state.rankingMode),top=axisOrder.map(k=>({k,v:Number(axes[k]?.score||0)})).sort((a,b)=>b.v-a.v).slice(0,3);return '<button class="ranking-row" data-id="'+e.id+'"><div class="rank-number">#'+row.rank+'</div>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'<div class="rank-art-empty"></div>')+'<div class="rank-main"><strong>'+esc(displayName(e))+'</strong><span>'+esc(confidenceLabel(row.confidence))+'</span><div class="mini-axis-row">'+top.map(x=>'<i><b style="width:'+Math.round(x.v)+'%"></b><em>'+esc(axisLabel(x.k))+'</em></i>').join('')+'</div></div><div class="rank-grade '+gradeClass(row.grade)+'"><strong>'+esc(row.grade)+'</strong><span>'+Math.round(row.score)+'</span></div></button>'}).join('');
   list.querySelectorAll('.ranking-row').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
 }
-function edgeMap(){const m=new Map();for(const x of catalog.team_optimizer?.synergy_edges||[]){m.set(Math.min(x.a,x.b)+':'+Math.max(x.a,x.b),Number(x.strength||0))}return m}
+let _teamEdgeCache=null;
+let _teamModeCache=new Map();
+function edgeMap(){
+  if(_teamEdgeCache)return _teamEdgeCache;
+  const m=new Map();
+  for(const x of catalog.team_optimizer?.synergy_edges||[]){
+    const key=Math.min(x.a,x.b)+':'+Math.max(x.a,x.b);
+    m.set(key,Math.max(Number(x.strength||0),m.get(key)||0));
+  }
+  _teamEdgeCache=m;return m;
+}
+function teamModeContext(mode){
+  const cacheKey=String(state.gameId)+':'+mode;
+  if(_teamModeCache.has(cacheKey))return _teamModeCache.get(cacheKey);
+  const byId=new Map();
+  for(const e of activeGameEntities()){
+    const sc=scenario(e,mode);if(!sc)continue;
+    const axes=scenarioAxes(e,mode),vec=axisOrder.map(k=>Number(axes[k]?.score||0)),norm=Math.sqrt(vec.reduce((s,x)=>s+x*x,0))||1;
+    byId.set(e.id,{entity:e,score:Number(sc.score||0),axes,vec,norm});
+  }
+  const ctx={byId,edges:edgeMap(),coverageAxes:catalog.team_optimizer?.coverage_axes||['offense','survivability','control','support','disruption','tempo']};
+  _teamModeCache.set(cacheKey,ctx);return ctx;
+}
 function teamScore(ids,mode){
-  const chars=ids.map(entityById).filter(Boolean),cfg=catalog.team_optimizer||{},edges=edgeMap();if(!chars.length)return {total:0,base:0,synergy:0,coverage:0,redundancy:0};
-  const base=chars.reduce((s,e)=>s+Number(scenario(e,mode)?.score||0),0)/chars.length;
-  let edgeRaw=0;for(let i=0;i<chars.length;i++)for(let j=i+1;j<chars.length;j++)edgeRaw+=edges.get(Math.min(chars[i].id,chars[j].id)+':'+Math.max(chars[i].id,chars[j].id))||0;
+  const ctx=teamModeContext(mode),members=ids.map(id=>ctx.byId.get(id)).filter(Boolean),cfg=catalog.team_optimizer||{};
+  if(!members.length)return {total:0,base:0,synergy:0,coverage:0,redundancy:0};
+  const base=members.reduce((s,m)=>s+m.score,0)/members.length;
+  let edgeRaw=0;
+  for(let i=0;i<members.length;i++)for(let j=i+1;j<members.length;j++)edgeRaw+=ctx.edges.get(Math.min(members[i].entity.id,members[j].entity.id)+':'+Math.max(members[i].entity.id,members[j].entity.id))||0;
   const synergy=Math.min(Number(catalog.adapter?.team_optimizer?.synergy_bonus_cap||15),edgeRaw*1.6);
-  const covAxes=cfg.coverage_axes||['offense','survivability','control','support','disruption','tempo'];let cov=0;
-  for(const k of covAxes)cov+=Math.max(...chars.map(e=>Number(scenarioAxes(e,mode)[k]?.score||0)))/100;
-  const coverage=Math.min(Number(catalog.adapter?.team_optimizer?.coverage_bonus_cap||12),(cov/covAxes.length)*12);
-  let sim=0,pairs=0;for(let i=0;i<chars.length;i++)for(let j=i+1;j<chars.length;j++){const a=scenarioAxes(chars[i],mode),b=scenarioAxes(chars[j],mode);let dot=0,aa=0,bb=0;for(const k of axisOrder){const x=Number(a[k]?.score||0),y=Number(b[k]?.score||0);dot+=x*y;aa+=x*x;bb+=y*y}if(aa&&bb){sim+=dot/Math.sqrt(aa*bb);pairs++}}
+  let cov=0;
+  for(const k of ctx.coverageAxes)cov+=Math.max(...members.map(m=>Number(m.axes[k]?.score||0)))/100;
+  const coverage=Math.min(Number(catalog.adapter?.team_optimizer?.coverage_bonus_cap||12),(cov/ctx.coverageAxes.length)*12);
+  let sim=0,pairs=0;
+  for(let i=0;i<members.length;i++)for(let j=i+1;j<members.length;j++){
+    let dot=0;for(let q=0;q<axisOrder.length;q++)dot+=members[i].vec[q]*members[j].vec[q];
+    sim+=dot/(members[i].norm*members[j].norm);pairs++;
+  }
   const avgSim=pairs?sim/pairs:0,redundancy=Math.max(0,(avgSim-.82)/.18)*Number(catalog.adapter?.team_optimizer?.duplicate_profile_penalty_cap||8);
   return {total:Math.min(100,Math.max(0,base*.78+synergy+coverage-redundancy)),base,synergy,coverage,redundancy};
+}
+function buildGreedyTeam(mode,fixed,candidates,teamSize,forbidden=new Set()){
+  const team=[...fixed].filter(id=>!forbidden.has(id)),fixedSet=new Set(team);
+  while(team.length<teamSize){
+    let bestId=null,bestScore=-Infinity;
+    for(const e of candidates){
+      if(team.includes(e.id)||forbidden.has(e.id))continue;
+      const score=teamScore([...team,e.id],mode).total;
+      if(score>bestScore){bestScore=score;bestId=e.id}
+    }
+    if(bestId==null)break;team.push(bestId);
+  }
+  if(team.length!==teamSize)return null;
+  for(let pass=0;pass<2;pass++){
+    let changed=false;
+    for(let i=0;i<team.length;i++){
+      if(fixedSet.has(team[i]))continue;
+      let bestId=team[i],bestScore=teamScore(team,mode).total;
+      for(const e of candidates){
+        if(team.includes(e.id)||forbidden.has(e.id))continue;
+        const trial=team.slice();trial[i]=e.id;const score=teamScore(trial,mode).total;
+        if(score>bestScore+0.001){bestScore=score;bestId=e.id}
+      }
+      if(bestId!==team[i]){team[i]=bestId;changed=true}
+    }
+    if(!changed)break;
+  }
+  return {ids:team,components:teamScore(team,mode)};
 }
 function optimizeTeam(mode,anchorId=null,excludeId=null,ownedOnly=false,fixedIds=[],allowedIds=null){
   const teamSize=Number(catalog.team_optimizer?.team_size||catalog.adapter?.team_size||6),owned=ownedIds();
   const fixed=[...new Set([...(fixedIds||[]),...(anchorId?[anchorId]:[])])].filter(id=>id!==excludeId);
-  if(fixed.length>teamSize)return [];
-  if(ownedOnly&&fixed.some(id=>!owned.has(id)))return [];
-  const allowed=allowedIds?new Set(allowedIds):null;
-  let candidates=activeGameEntities().filter(e=>e.id!==excludeId&&(!allowed||allowed.has(e.id))&&(!ownedOnly||owned.has(e.id))&&scenario(e,mode));
-  candidates.sort((a,b)=>Number(scenario(b,mode)?.score||0)-Number(scenario(a,mode)?.score||0));
-  const pool=Number(catalog.team_optimizer?.candidate_pool||48);candidates=candidates.slice(0,pool);
-  for(const id of fixed){if(!candidates.some(e=>e.id===id)){const a=entityById(id);if(a&&a.id!==excludeId&&(!allowed||allowed.has(a.id))&&(!ownedOnly||owned.has(a.id))&&scenario(a,mode))candidates.unshift(a)}}
-  let beams=[fixed];const width=Number(catalog.team_optimizer?.beam_width||120);
-  while(beams.length&&beams[0].length<teamSize){
-    const next=[];for(const team of beams){for(const e of candidates){if(team.includes(e.id))continue;const ids=[...team,e.id];next.push({ids,score:teamScore(ids,mode).total})}}
-    next.sort((a,b)=>b.score-a.score);beams=next.slice(0,width).map(x=>x.ids);if(!beams.length)break
+  if(fixed.length>teamSize||ownedOnly&&fixed.some(id=>!owned.has(id)))return [];
+  const allowed=allowedIds?new Set(allowedIds):null,ctx=teamModeContext(mode);
+  let candidates=[...ctx.byId.values()].map(x=>x.entity).filter(e=>e.id!==excludeId&&(!allowed||allowed.has(e.id))&&(!ownedOnly||owned.has(e.id)));
+  const edges=ctx.edges;
+  candidates.sort((a,b)=>{
+    const affinity=id=>fixed.reduce((s,f)=>s+(edges.get(Math.min(id,f)+':'+Math.max(id,f))||0),0);
+    return (Number(scenario(b,mode)?.score||0)+affinity(b.id)*3)-(Number(scenario(a,mode)?.score||0)+affinity(a.id)*3);
+  });
+  const pool=Math.min(Number(catalog.team_optimizer?.candidate_pool||48),36);
+  candidates=candidates.slice(0,pool);
+  for(const id of fixed){if(!candidates.some(e=>e.id===id)){const a=entityById(id);if(a&&ctx.byId.has(id))candidates.unshift(a)}}
+  const first=buildGreedyTeam(mode,fixed,candidates,teamSize,new Set(excludeId?[excludeId]:[]));if(!first)return [];
+  const results=[first],seen=new Set([first.ids.slice().sort((a,b)=>a-b).join(',')]);
+  for(const drop of first.ids.filter(id=>!fixed.includes(id)).slice(0,4)){
+    const alt=buildGreedyTeam(mode,fixed,candidates,teamSize,new Set([...(excludeId?[excludeId]:[]),drop]));
+    if(!alt)continue;const sig=alt.ids.slice().sort((a,b)=>a-b).join(',');
+    if(!seen.has(sig)){seen.add(sig);results.push(alt)}
   }
-  return beams.map(ids=>({ids,components:teamScore(ids,mode)})).sort((a,b)=>b.components.total-a.components.total).slice(0,4);
+  return results.sort((a,b)=>b.components.total-a.components.total).slice(0,4);
 }
 function fixedTeamChips(){
   if(!state.teamFixed.length)return '<span class="muted small">No locked members.</span>';
@@ -147,14 +219,22 @@ function renderTeams(body){
   $('#teamOwnedOnly').onchange=e=>state.teamOwnedOnly=e.target.checked;
   $('#addFixed').onclick=()=>{const id=Number($('#teamFixedAdd').value||0);if(id&&!state.teamFixed.includes(id)&&state.teamFixed.length<(catalog.adapter?.team_size||6)){state.teamFixed.push(id);renderTeams(body)}};
   body.querySelectorAll('[data-remove-fixed]').forEach(b=>b.onclick=()=>{state.teamFixed=state.teamFixed.filter(x=>x!==Number(b.dataset.removeFixed));renderTeams(body)});
-  $('#runTeam').onclick=()=>renderTeamResults();
+  $('#runTeam').onclick=()=>{if(!state.teamBusy)renderTeamResults()};
 }
-function renderTeamResults(){
-  const host=$('#teamResults'),teamSize=Number(catalog.adapter?.team_size||6);
+async function renderTeamResults(){
+  const host=$('#teamResults'),teamSize=Number(catalog.adapter?.team_size||6),button=$('#runTeam');
   if(state.teamOwnedOnly&&ownedIds().size<teamSize){host.innerHTML='<div class="empty-state"><strong>Not enough owned characters</strong>Add at least '+teamSize+' characters to your roster.</div>';return}
-  const teams=optimizeTeam(state.teamMode,state.teamAnchor,state.teamExclude,state.teamOwnedOnly,state.teamFixed);if(!teams.length){host.innerHTML='<div class="empty-state"><strong>No valid team</strong>Change the constraints and try again.</div>';return}
-  host.innerHTML=teams.map((t,idx)=>'<section class="team-result"><div class="team-result-head"><div><span class="eyebrow">'+(idx===0?'Best match':'Alternative '+idx)+'</span><h3>'+Math.round(t.components.total)+' team index</h3></div><div class="team-components"><span>Base '+Math.round(t.components.base)+'</span><span>Synergy +'+t.components.synergy.toFixed(1)+'</span><span>Coverage +'+t.components.coverage.toFixed(1)+'</span>'+(t.components.redundancy?'<span>Overlap −'+t.components.redundancy.toFixed(1)+'</span>':'')+'</div></div><div class="team-cards">'+t.ids.map(id=>{const e=entityById(id),img=chooseImage(e,'grid_card',['card']);return '<button class="team-member" data-id="'+id+'>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<strong>'+esc(displayName(e))+'</strong><span>'+esc(scenario(e,state.teamMode)?.grade||'')+'</span></button>'}).join('')+'</div></section>').join('');
-  host.querySelectorAll('.team-member').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
+  state.teamBusy=true;if(button){button.disabled=true;button.textContent='Optimizing…'}
+  host.innerHTML='<div class="optimizer-progress"><span class="spinner"></span><div><strong>Building teams</strong><small>Comparing scenario fit, synergy and coverage.</small></div></div>';
+  await new Promise(resolve=>setTimeout(resolve,32));
+  try{
+    const teams=optimizeTeam(state.teamMode,state.teamAnchor,state.teamExclude,state.teamOwnedOnly,state.teamFixed);
+    if(!teams.length){host.innerHTML='<div class="empty-state"><strong>No valid team</strong>Change the constraints and try again.</div>';return}
+    host.innerHTML=teams.map((t,idx)=>'<section class="team-result"><div class="team-result-head"><div><span class="eyebrow">'+(idx===0?'Best match':'Alternative '+idx)+'</span><h3>'+Math.round(t.components.total)+' team fit</h3></div><div class="team-components"><span>Base '+Math.round(t.components.base)+'</span><span>Synergy +'+t.components.synergy.toFixed(1)+'</span><span>Coverage +'+t.components.coverage.toFixed(1)+'</span>'+(t.components.redundancy?'<span>Overlap −'+t.components.redundancy.toFixed(1)+'</span>':'')+'</div></div><div class="team-cards">'+t.ids.map(id=>{const e=entityById(id),img=chooseImage(e,'grid_card',['card']);return '<button class="team-member" data-id="'+id+'>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<strong>'+esc(displayName(e))+'</strong><span>'+esc(scenario(e,state.teamMode)?.grade||'')+'</span></button>'}).join('')+'</div></section>').join('');
+    host.querySelectorAll('.team-member').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
+  }finally{
+    state.teamBusy=false;const live=$('#runTeam');if(live){live.disabled=false;live.textContent='Optimize team'}
+  }
 }
 
 function renderFilters(){const rows=activeGameEntities(),vals=k=>[...new Set(rows.map(e=>e[k]).filter(Boolean))].sort(),professions=[...new Set(rows.flatMap(e=>entityRoles(e)))].sort(),options=(arr,current,fmt=x=>x)=>'<option value="">All</option>'+arr.map(v=>'<option value="'+esc(v)+'" '+(current===v?'selected':'')+'>'+esc(fmt(v))+'</option>').join('');$('#filterSheet').innerHTML='<div class="sheet-handle"></div><div class="sheet-head"><h2>Character filters</h2><button class="icon-button" id="closeFilter">×</button></div><div class="sheet-grid"><div class="sheet-field"><label>Rarity</label><select id="fRarity">'+options(vals('rarity_key'),state.filters.rarity)+'</select></div><div class="sheet-field"><label>Faction</label><select id="fFaction">'+options(vals('faction_key'),state.filters.faction)+'</select></div><div class="sheet-field"><label>Attribute</label><select id="fAttribute">'+options(vals('attribute_type'),state.filters.attribute)+'</select></div><div class="sheet-field"><label>Role</label><select id="fProfession">'+options(professions,state.filters.profession,professionLabel)+'</select></div><div class="sheet-field"><label>Sort</label><select id="fSort"><option value="name" '+(state.filters.sort==='name'?'selected':'')+'>Name</option><option value="release" '+(state.filters.sort==='release'?'selected':'')+'>Newest</option><option value="rarity" '+(state.filters.sort==='rarity'?'selected':'')+'>Rarity</option></select></div></div><div class="sheet-actions"><button class="secondary-button" id="clearFilters">Clear</button><button class="primary-button" id="applyFilters">Apply</button></div>';openSheet('filterSheet');$('#closeFilter').onclick=closeSheets;$('#clearFilters').onclick=()=>{state.filters={rarity:'',faction:'',attribute:'',profession:'',sort:'name'};closeSheets();renderGameSection()};$('#applyFilters').onclick=()=>{state.filters.rarity=$('#fRarity').value;state.filters.faction=$('#fFaction').value;state.filters.attribute=$('#fAttribute').value;state.filters.profession=$('#fProfession').value;state.filters.sort=$('#fSort').value;closeSheets();renderGameSection()}}
