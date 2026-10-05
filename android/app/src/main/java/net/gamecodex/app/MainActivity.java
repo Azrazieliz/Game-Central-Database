@@ -198,7 +198,7 @@ public class MainActivity extends Activity {
     }
 
     private void ensureBundledCodex() throws IOException {
-        File marker = new File(codexDir, ".bundled-v8");
+        File marker = new File(codexDir, ".bundled-v100");
         if (!new File(codexDir, "index.html").isFile() || !marker.exists()) {
             deleteTree(codexDir);
             copyAssetTree("codex", codexDir);
