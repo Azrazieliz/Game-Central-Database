@@ -10,9 +10,12 @@ These are durable project rules and supersede implementation shortcuts.
 
 ## Rankings
 - Game8, Kaisen Wiki, or any other site/community tier lists are Layer C reference data only.
-- The Codex analytical tier list must never use those source tier labels as score inputs, priors, tie-breakers, or hidden features.
-- Codex tiers come from normalized character kits/mechanics and expose factors/evidence.
-- Account-specific value remains a separate Layer E ranking.
+- The Codex analytical tier list must never use those source tier labels as score inputs, priors, tie-breakers, calibration targets, or hidden features.
+- Production rankings are multi-axis and scenario-specific. They derive from normalized sourced mechanics using stable adapter benchmarks.
+- Tier/grade boundaries are absolute and fixed by the adapter. No tier has a roster quota and adding a new character must not automatically demote unrelated characters.
+- Every character exposes axis scores, scenario score, rank, confidence, evidence, optimized subsystem loadout, and replacement value.
+- Base-kit strength and optimized-subsystem ceiling stay distinct.
+- Account-specific value remains Layer E and is computed locally from the user's owned roster/resources.
 
 ## Shoujo Kaisen naming
 - Kaisen Wiki is the user-facing canonical-name authority.
@@ -42,8 +45,8 @@ These are durable project rules and supersede implementation shortcuts.
 - The default flow is: Game library -> selected game -> compact searchable database -> visual character card -> readable character detail.
 - Filters live in a compact sheet on mobile; they do not permanently consume the screen.
 - Every route transition must reset horizontal document scroll. The document itself must never become wider than the viewport; only intentionally scrollable local components may scroll horizontally.
-- Character cards do not display an authoritative Codex tier while the analytical model is experimental.
-- Experimental analysis may appear inside character details only with a clear experimental label and without false precision such as arbitrary 45.03/100 power scores.
+- Character cards prioritize identity and source metadata. Rankings live in the dedicated Rankings view and character Overview rather than cluttering every card.
+- Production scenario scores may be shown only with their scenario label, rank/grade, confidence, and accessible axis explanation.
 - Compatibility must be presented as named teammates/counters plus readable mechanic reasons. Raw graph coefficients belong only in technical audit data.
 - Raw ontology keys such as status:* or snake_case mechanic IDs are never primary user-facing labels.
 - Import/update controls and audit/provenance data live in Settings/Sources, not in the primary character browsing flow.
@@ -54,3 +57,13 @@ These are durable project rules and supersede implementation shortcuts.
 - A source record labelled as a skill is not automatically a gameplay mechanic. Long narrative/lore entries with no normalized effects are quarantined as source notes and excluded from positive analytical evidence.
 - Unparsed source entries remain visible only in an explicitly labelled source/unparsed disclosure; do not silently pretend they were understood.
 - Kaisen-native full illustrations are preferred for character detail pages. Game8/in-game captures remain alternates when a cleaner sourced Kaisen illustration exists.
+
+
+## Teams / roster
+- Team optimization operates on Codex scenario evaluations, normalized compatibility evidence, and axis coverage; it never copies site recommendation lists.
+- The optimizer supports best team, best team around X, exclude Y, owned-roster-only, low-investment, and max-investment workflows.
+- Personal owned-roster state is Layer E, stored locally on device, and never mutates sourced game data.
+- Replacement value and nearest substitutes are separate from absolute character strength.
+
+## Completion standard for a game adapter
+A game is considered platform-complete only when the generic shell can browse its characters, rankings, teams, equipment/subsystems, local roster, sources and portable export without game-specific UI code.
