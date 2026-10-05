@@ -74,6 +74,28 @@ jobs:
           node --check work/codex/detail.js
           node --check work/codex/app.js
 
+      - name: Prove adapter portability with a second-game fixture
+        run: |
+          mkdir -p portability/data
+          cp tests/portability_catalog.json portability/data/catalog.json
+          python3 tools/evaluate_codex.py --out portability --adapter tests/portability_adapter.json
+          python3 tools/export_portable.py --out portability
+          python3 - <<'PY'
+          import json, sqlite3
+          c=json.load(open('portability/data/catalog.json'))
+          assert c['engine_version']=='1.0.0'
+          assert c['adapter']['game_key']=='portability_fixture'
+          assert c['adapter']['team_size']==3
+          assert len(c['rankings'])==1 and len(c['rankings'][0]['entries'])==3
+          assert c['analysis_policy']['source_tier_inputs'] is False
+          assert c['analysis_policy']['tier_quota'] is False
+          db=sqlite3.connect('portability/game_codex.sqlite')
+          assert db.execute('select count(*) from entities').fetchone()[0]==3
+          assert db.execute('select count(*) from subsystems').fetchone()[0]==1
+          db.close()
+          print('SECOND_ADAPTER_PORTABILITY_OK')
+          PY
+
       - name: Production validation
         run: |
           python3 - <<'PY'
