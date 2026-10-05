@@ -1,4 +1,26 @@
-function route(){closeSheets();resetScroll();const h=location.hash.replace(/^#/,'');let m=h.match(/^game\/(\d+)\/(characters|souls|spirits|mounts)$/);if(m){state.gameId=Number(m[1]);state.section=m[2];state.query='';renderGame();return}m=h.match(/^character\/(\d+)$/);if(m){renderCharacter(Number(m[1]));return}m=h.match(/^subsystem\/([^/]+)\/(.+)$/);if(m){renderSubsystem(decodeURIComponent(m[1]),decodeURIComponent(m[2]));return}renderHome()}
-window.codexBack=function(){if(!$('#sheetBackdrop').classList.contains('hidden')){closeSheets();return true}const h=location.hash.replace(/^#/,'');if(/^character\//.test(h)){const id=Number(h.split('/')[1]),e=entityById(id);location.hash='game/'+(e?.game_id||state.gameId||1)+'/characters';return true}if(/^subsystem\//.test(h)){const type=h.split('/')[1],sec=type==='soul'?'souls':type==='martial_spirit'?'spirits':'mounts';location.hash='game/'+(state.gameId||1)+'/'+sec;return true}if(/^game\//.test(h)){location.hash='';return true}return false}
-async function boot(){catalog=window.CODEX_CATALOG||await(await fetch('data/catalog.json')).json();catalog.subsystems=catalog.subsystems||[];buildFamilyBases();$('#sheetBackdrop').onclick=closeSheets;window.addEventListener('hashchange',route);route()}
+function route(){
+  closeSheets();resetScroll();
+  const h=location.hash.replace(/^#/,'');
+  let m=h.match(/^game\/(\d+)\/(characters|rankings|teams|equipment|roster)$/);
+  if(m){state.gameId=Number(m[1]);state.section=m[2];state.query='';renderGame();return}
+  m=h.match(/^character\/(\d+)$/);if(m){renderCharacter(Number(m[1]));return}
+  m=h.match(/^subsystem\/([^/]+)\/(.+)$/);if(m){renderSubsystem(decodeURIComponent(m[1]),decodeURIComponent(m[2]));return}
+  renderHome();
+}
+window.codexBack=function(){
+  if(!$('#sheetBackdrop').classList.contains('hidden')){closeSheets();return true}
+  const h=location.hash.replace(/^#/,'');
+  if(/^character\//.test(h)){const id=Number(h.split('/')[1]),e=entityById(id);location.hash='game/'+(e?.game_id||state.gameId||1)+'/characters';return true}
+  if(/^subsystem\//.test(h)){location.hash='game/'+(state.gameId||1)+'/equipment';return true}
+  if(/^game\//.test(h)){location.hash='';return true}
+  return false;
+}
+async function boot(){
+  catalog=window.CODEX_CATALOG||await(await fetch('data/catalog.json')).json();
+  catalog.subsystems=catalog.subsystems||[];catalog.rankings=catalog.rankings||[];
+  loadRoster();buildFamilyBases();
+  $('#sheetBackdrop').onclick=closeSheets;
+  window.addEventListener('hashchange',route);
+  route();
+}
 boot().catch(err=>{document.body.innerHTML='<div class="home-wrap"><div class="home-top">'+brand()+'</div><div class="empty-state"><strong>Codex failed to load</strong>'+esc(err.message||err)+'</div></div>'});
