@@ -360,7 +360,7 @@ def normalize_japanese(text):
             vals=stat_percent(s,label)
             if vals:
                 # Negative sign / explicit low/down on enemy-facing stat means debuff.
-                neg=bool(re.search(label+r"[^。]{0,18}(?:[-−]|低下|減少)",s))
+                neg=bool(re.search(r"(?:"+label+r")[^。]{0,18}(?:[-−]|低下|減少)",s))
                 target=target_from_japanese(s)
                 if neg and target.get("side")=="enemy":
                     out.append(jp_effect(s,"debuff",mk.replace("_up","_down"),"negative",percent_values=vals))
