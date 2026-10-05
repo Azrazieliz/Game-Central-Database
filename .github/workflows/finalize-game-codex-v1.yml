@@ -82,13 +82,17 @@ jobs:
           r=json.load(open('work/codex/evaluation-report.json'))
           assert c['engine_version']=='1.0.0', c['engine_version']
           assert len(c['entities'])==528
-          assert len(c.get('subsystems') or [])==103
+          assert len(c.get('subsystems') or [])==102
           assert sum(s['subsystem_type']=='soul' for s in c['subsystems'])==25
-          assert sum(s['subsystem_type']=='martial_spirit' for s in c['subsystems'])==64
+          assert sum(s['subsystem_type']=='martial_spirit' for s in c['subsystems'])==63
           assert sum(s['subsystem_type']=='mount' for s in c['subsystems'])==14
           assert r['all_characters_evaluated']==528, r
           assert r['source_tiers_used'] is False
           assert r['tier_quota'] is False
+          sanitation=json.load(open('work/codex/kaisen-system-enrichment-report.json'))
+          assert sanitation.get('subsystem_duplicates_removed')==1, sanitation.get('subsystem_duplicates_removed')
+          assert sanitation.get('unparsed_skills',9999) < 220, sanitation.get('unparsed_skills')
+          assert sanitation.get('source_note_skills',0) >= 1
           assert c['analysis_policy']['source_tier_inputs'] is False
           assert c['analysis_policy']['tier_quota'] is False
           assert c['adapter']['team_size']==6
