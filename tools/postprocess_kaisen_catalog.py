@@ -2,7 +2,7 @@
 from __future__ import annotations
 import argparse, json, re
 from pathlib import Path
-from enrich_kaisen_systems import normalize_source_text, compute_rankings
+from enrich_kaisen_systems import normalize_source_text
 
 
 BAD_DISPLAY_NAMES={"action failed","error","failed","undefined","null","unknown"}
@@ -121,13 +121,17 @@ def main():
             cls=classify_skill_presentation(s)
             source_note_count += 1 if cls=="source_note" else 0
             unparsed_count += 1 if cls=="unparsed" else 0
-    cat["tier_lists"]=compute_rankings(entities,cat.get("subsystems") or [])
-    cat.setdefault("analysis_policy",{}).update({"status":"experimental","user_facing_precision":"coarse","source_tier_inputs":False,"note":"Analytical tiers are a heuristic preview and are not displayed as authoritative card rankings."})
-    cat["engine_version"]="0.8.0"
-    ranked=sum(any(a.get("ranking_key")=="codex_analytical" and a.get("profile_key")=="optimized_subsystems" and a.get("tier_label")!="UNRANKED" for a in e.get("analysis",[])) for e in cat.get("entities") or [])
+    # Remove the retired percentile/quota analytical model entirely. The production
+    # evaluator runs in a separate stage after sanitation.
+    for e in entities:
+        e["analysis"]=[a for a in e.get("analysis",[]) if a.get("ranking_key")!="codex_analytical" and not str(a.get("title","")).startswith("Codex analytical")]
+    cat["tier_lists"]=[x for x in cat.get("tier_lists",[]) if x.get("ranking_key")!="codex_analytical"]
+    cat.setdefault("analysis_policy",{}).update({"status":"normalized_ready","source_tier_inputs":False,"legacy_heuristic_removed":True})
+    cat["engine_version"]="0.9.0"
+    ranked=sum(1 for e in entities if effect_count(e)>0)
     report_path=root/"kaisen-system-enrichment-report.json"
     report=json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
-    report.update({"engine_version":"0.8.0","bilingual_skill_refresh_characters":repaired,"skills_reparsed":skill_repairs,"zero_effect_skills_before_refresh":zero_effect_skills_before,"zero_effect_skills_after_refresh":zero_effect_skills_after,"heroes_ranked_with_subsystems":ranked,"source_tiers_used_for_analysis":False,"display_name_fixes":display_name_fixes,"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed})
+    report.update({"engine_version":"0.9.0","bilingual_skill_refresh_characters":repaired,"skills_reparsed":skill_repairs,"zero_effect_skills_before_refresh":zero_effect_skills_before,"zero_effect_skills_after_refresh":zero_effect_skills_after,"heroes_ranked_with_subsystems":ranked,"source_tiers_used_for_analysis":False,"display_name_fixes":display_name_fixes,"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed})
     if cat.get("games"):
         cat["games"][0]["data_report"]={**(cat["games"][0].get("data_report") or {}),**report}
     p.write_text(json.dumps(cat,ensure_ascii=False,separators=(",",":")),encoding="utf-8")
@@ -136,5 +140,5 @@ def main():
     print(json.dumps({"repaired_characters":len(repaired),"skills_reparsed":skill_repairs,"zero_effect_skills_before":zero_effect_skills_before,"zero_effect_skills_after":zero_effect_skills_after,"heroes_ranked_with_subsystems":ranked,"display_name_fixes":len(display_name_fixes),"source_note_skills":source_note_count,"unparsed_skills":unparsed_count,"subsystem_duplicates_removed":subsystem_duplicates_removed,"repaired":repaired},ensure_ascii=False))
     if ranked < 528:
         missing=[e["canonical_name"] for e in cat.get("entities") or [] if not any(a.get("ranking_key")=="codex_analytical" and a.get("profile_key")=="optimized_subsystems" and a.get("tier_label")!="UNRANKED" for a in e.get("analysis",[]))]
-        raise SystemExit("Unranked after fallback: "+json.dumps(missing,ensure_ascii=False))
+        raise SystemExit("Characters without normalized effects after fallback: "+json.dumps(missing,ensure_ascii=False))
 if __name__=="__main__":main()
