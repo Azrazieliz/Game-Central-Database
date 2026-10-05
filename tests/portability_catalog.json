@@ -1,0 +1,13 @@
+{
+  "generated_at":"fixture",
+  "engine_version":"fixture",
+  "games":[{"id":1,"game_key":"portability_fixture","name":"Portability Fixture","adapter_key":"portability_fixture"}],
+  "entities":[
+    {"id":1,"game_id":1,"entity_key":"fixture:a","canonical_name":"Alpha","skills":[{"skill_key":"a1","name":"Strike","skill_type":"active","description_source":"fixture","versions":[{"effects":[{"effect_type":"damage","mechanic_key":"damage","polarity":"negative","target":{"side":"enemy","count":2},"magnitude":{"percent_values":[600]},"condition":{},"timing":{},"extension":{}}]}]}],"provenance":[{"site_name":"fixture","url":"fixture://a"}],"images":[],"relationships":[],"aliases":[]},
+    {"id":2,"game_id":1,"entity_key":"fixture:b","canonical_name":"Beta","skills":[{"skill_key":"b1","name":"Guard","skill_type":"active","description_source":"fixture","versions":[{"effects":[{"effect_type":"shield","mechanic_key":"shield","polarity":"positive","target":{"side":"ally","scope":"all"},"magnitude":{"percent_values":[150]},"condition":{},"timing":{},"extension":{}}]}]}],"provenance":[{"site_name":"fixture","url":"fixture://b"}],"images":[],"relationships":[],"aliases":[]},
+    {"id":3,"game_id":1,"entity_key":"fixture:c","canonical_name":"Gamma","skills":[{"skill_key":"c1","name":"Lock","skill_type":"active","description_source":"fixture","versions":[{"effects":[{"effect_type":"control","mechanic_key":"status:lock","polarity":"negative","target":{"side":"enemy","count":1},"magnitude":{},"condition":{},"timing":{"duration_rounds":2},"extension":{}}]}]}],"provenance":[{"site_name":"fixture","url":"fixture://c"}],"images":[],"relationships":[],"aliases":[]}
+  ],
+  "subsystems":[{"subsystem_type":"relic","subsystem_key":"r1","name":"Fixture Relic","max_profile":{"effects":[{"effect_type":"buff","mechanic_key":"attack_up","polarity":"positive","target":{"side":"self","count":1},"magnitude":{"percent_values":[40]},"condition":{},"timing":{},"extension":{}}]},"compatibility":{"type":"universal"},"images":[],"provenance":[]}],
+  "compatibility":[],
+  "source_opinions":[]
+}
