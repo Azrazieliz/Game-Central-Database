@@ -194,14 +194,36 @@
     }
   ],
   "subsystems": {
-    "soul": {
-      "compatibility": "profession"
-    },
-    "martial_spirit": {
-      "compatibility": "explicit_character_list"
-    },
-    "mount": {
-      "compatibility": "universal_unless_source_restricts"
+    "optimization_slots": [
+      "soul",
+      "martial_spirit",
+      "mount"
+    ],
+    "types": {
+      "soul": {
+        "label": "Souls",
+        "singular": "Soul",
+        "compatibility": {
+          "type": "profession",
+          "entity_field": "kaisen_meta.professions"
+        }
+      },
+      "martial_spirit": {
+        "label": "Martial Spirits",
+        "singular": "Martial Spirit",
+        "compatibility": {
+          "type": "explicit_character_list",
+          "entity_key": "kaisen_asset_family",
+          "subsystem_field": "compatibility.hero_keys"
+        }
+      },
+      "mount": {
+        "label": "Mounts",
+        "singular": "Mount",
+        "compatibility": {
+          "type": "universal_unless_source_restricts"
+        }
+      }
     }
   },
   "team_optimizer": {
