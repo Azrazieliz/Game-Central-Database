@@ -34,7 +34,7 @@ function gameById(id){return (catalog.games||[]).find(g=>Number(g.id)===Number(i
 function entityById(id){return (catalog.entities||[]).find(e=>Number(e.id)===Number(id))}
 function subsystemBy(type,key){return (catalog.subsystems||[]).find(s=>s.subsystem_type===type&&s.subsystem_key===key)}
 function professionLabel(p){return ({attack:'Attack',assist:'Support',defend:'Defense',control:'Control'})[p]||p}
-function entityRoles(e){const rows=e?.adapter_meta?.roles||e?.kaisen_meta?.professions||[];return [...new Set([...(Array.isArray(rows)?rows:[rows]),...(e?.role_key?[e.role_key]:[])].filter(Boolean))}
+function entityRoles(e){const rows=e?.adapter_meta?.roles||e?.kaisen_meta?.professions||[];return [...new Set([...(Array.isArray(rows)?rows:[rows]),...(e?.role_key?[e.role_key]:[])].filter(Boolean))]}
 function subsystemTypes(){const types=catalog.adapter?.subsystems?.types||{};const configured=Object.entries(types).map(([key,cfg])=>({key,label:cfg.label||key,singular:cfg.singular||cfg.label||key}));if(configured.length)return configured;const keys=[...new Set((catalog.subsystems||[]).map(s=>s.subsystem_type).filter(Boolean))];return keys.map(key=>({key,label:key.replace(/_/g,' '),singular:key.replace(/_/g,' ')}))}
 function humanMechanic(k){if(!k)return 'Mechanic interaction';if(mechanicLabels[k])return mechanicLabels[k];if(k.startsWith('status:'))return 'Unique status';return k.replace(/_/g,' ').replace(/\b\w/g,m=>m.toUpperCase())}
 function effectsOfSkill(s){return (s.versions||[]).flatMap(v=>v.effects||[])}
