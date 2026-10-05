@@ -113,8 +113,10 @@ jobs:
           assert r['tier_quota'] is False
           sanitation=json.load(open('work/codex/kaisen-system-enrichment-report.json'))
           assert sanitation.get('subsystem_duplicates_removed')==1, sanitation.get('subsystem_duplicates_removed')
-          assert sanitation.get('unparsed_skills',9999) < 220, sanitation.get('unparsed_skills')
+          assert sanitation.get('normalized_skill_coverage',0) >= 0.85, sanitation
           assert sanitation.get('source_note_skills',0) >= 1
+          assert sanitation.get('heroes_with_normalized_effects') == 528, sanitation
+          assert r.get('avg_confidence',0) >= 0.85, r
           assert c['analysis_policy']['source_tier_inputs'] is False
           assert c['analysis_policy']['tier_quota'] is False
           assert c['adapter']['team_size']==6
