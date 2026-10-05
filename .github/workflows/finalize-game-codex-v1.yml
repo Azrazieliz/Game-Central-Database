@@ -1,0 +1,185 @@
+name: Finalize Game Codex v1.0.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'finalize_v1_trigger/**'
+      - '.github/workflows/finalize-game-codex-v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11'
+
+      - name: Install Android platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Python dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet beautifulsoup4 pillow
+
+      - name: Restore validated Shoujo Kaisen full pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ART_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=game-codex-shoujo-kaisen-pack-v0.7.0&per_page=100" --jq '.artifacts | map(select(.expired==false)) | sort_by(.created_at) | last | .id')
+          test -n "$ART_ID"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ART_ID}/zip" > outer.zip
+          mkdir outer work
+          unzip -q outer.zip -d outer
+          unzip -q outer/Game-Codex-Shoujo-Kaisen-pack-v0.7.0.zip -d work
+          test -f work/codex/data/catalog.json
+
+      - name: Sanitize presentation data and normalize every skill
+        run: python3 tools/postprocess_kaisen_catalog.py --out work/codex
+
+      - name: Build production multi-axis evaluation
+        run: python3 tools/evaluate_codex.py --out work/codex --adapter adapters/shoujo_kaisen.json
+
+      - name: Export versioned SQLite JSON CSV portable data
+        run: python3 tools/export_portable.py --out work/codex
+
+      - name: Install generic production UI
+        run: |
+          cp android/app/src/main/assets/codex/index.html work/codex/index.html
+          cp android/app/src/main/assets/codex/styles.css work/codex/styles.css
+          cp android/app/src/main/assets/codex/core.js work/codex/core.js
+          cp android/app/src/main/assets/codex/browser.js work/codex/browser.js
+          cp android/app/src/main/assets/codex/detail.js work/codex/detail.js
+          cp android/app/src/main/assets/codex/app.js work/codex/app.js
+          node --check work/codex/core.js
+          node --check work/codex/browser.js
+          node --check work/codex/detail.js
+          node --check work/codex/app.js
+
+      - name: Production validation
+        run: |
+          python3 - <<'PY'
+          import json, os, sqlite3
+          c=json.load(open('work/codex/data/catalog.json'))
+          r=json.load(open('work/codex/evaluation-report.json'))
+          assert c['engine_version']=='1.0.0', c['engine_version']
+          assert len(c['entities'])==528
+          assert len(c.get('subsystems') or [])==103
+          assert sum(s['subsystem_type']=='soul' for s in c['subsystems'])==25
+          assert sum(s['subsystem_type']=='martial_spirit' for s in c['subsystems'])==64
+          assert sum(s['subsystem_type']=='mount' for s in c['subsystems'])==14
+          assert r['all_characters_evaluated']==528, r
+          assert r['source_tiers_used'] is False
+          assert r['tier_quota'] is False
+          assert c['analysis_policy']['source_tier_inputs'] is False
+          assert c['analysis_policy']['tier_quota'] is False
+          assert c['adapter']['team_size']==6
+          assert len(c['rankings'])==6
+          for ranking in c['rankings']:
+              entries=ranking['entries']
+              assert len(entries)==528, (ranking['mode_key'],len(entries))
+              assert sorted(x['rank'] for x in entries)==list(range(1,529))
+              assert all(0<=x['score']<=100 for x in entries)
+              assert all(x['grade'] in {'S+','S','A','B','C','D'} for x in entries)
+          assert not any(a.get('ranking_key')=='codex_analytical' for e in c['entities'] for a in e.get('analysis',[]))
+          broken=next(e for e in c['entities'] if e['canonical_name']=='Action failed')
+          assert broken.get('display_name')=='Wen Zhong', broken
+          abyss=next(e for e in c['entities'] if e['canonical_name']=='Abyss - The Last Apostle')
+          lore=next(s for s in abyss['skills'] if s.get('name')=='Neverending Nightmare')
+          assert lore.get('presentation_class')=='source_note', lore
+          assert os.path.isfile('work/codex/game_codex.sqlite')
+          db=sqlite3.connect('work/codex/game_codex.sqlite')
+          meta=dict(db.execute('select key,value from metadata'))
+          assert meta['schema_version']=='1'
+          assert int(db.execute('select count(*) from entities').fetchone()[0])==528
+          assert int(db.execute('select count(*) from evaluations').fetchone()[0])==528*6
+          db.close()
+          assert os.path.isfile('work/codex/csv/characters.csv')
+          assert os.path.isfile('work/codex/csv/rankings.csv')
+          assert os.path.isfile('work/codex/portable-manifest.json')
+          ui=' '.join(open('work/codex/'+x,encoding='utf-8').read() for x in ['index.html','core.js','browser.js','detail.js','app.js'])
+          assert 'Data layers' not in ui
+          assert 'optimized_subsystems' not in ui
+          assert '45.03/100' not in ui
+          assert 'Characters' in ui and 'Rankings' in ui and 'Teams' in ui and 'Equipment' in ui and 'Roster' in ui
+          assert 'team optimizer' in ui.lower()
+          print('GAME_CODEX_V1_VALID',r)
+          PY
+
+      - name: Package full portable pack
+        run: |
+          cd work
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-portable-v1.0.0.zip" codex
+          cd "$GITHUB_WORKSPACE"
+          sha256sum Game-Codex-Shoujo-Kaisen-portable-v1.0.0.zip > Game-Codex-Shoujo-Kaisen-portable-v1.0.0.sha256
+
+      - name: Prepare compact Android assets
+        run: |
+          rm -rf android/app/src/main/assets/codex
+          cp -a work/codex android/app/src/main/assets/codex
+          rm -rf android/app/src/main/assets/codex/raw android/app/src/main/assets/codex/research android/app/src/main/assets/codex/csv
+          rm -f android/app/src/main/assets/codex/game_codex.sqlite
+          rm -f android/app/src/main/assets/codex/data/catalog.json
+          rm -f android/app/src/main/assets/codex/identity-match-report.json
+          rm -f android/app/src/main/assets/codex/source-sync-report.json
+          rm -f android/app/src/main/assets/codex/kaisen-system-enrichment-report.json
+          rm -f android/app/src/main/assets/codex/evaluation-report.json
+          rm -f android/app/src/main/assets/codex/portable-manifest.json
+          rm -f android/app/src/main/assets/codex/*.sha256
+          sed -E -i "s/versionCode [0-9]+/versionCode 100/" android/app/build.gradle
+          sed -E -i "s/versionName '[^']+'/versionName '1.0.0'/" android/app/build.gradle
+
+      - name: Build Android APK
+        run: gradle -p android :app:assembleDebug --stacktrace
+
+      - name: Stage APK and compact update pack
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk Game-Codex-Shoujo-Kaisen-v1.0.0.apk
+          sha256sum Game-Codex-Shoujo-Kaisen-v1.0.0.apk > Game-Codex-Shoujo-Kaisen-v1.0.0.sha256
+          cd android/app/src/main/assets
+          zip -qr "$GITHUB_WORKSPACE/Game-Codex-Shoujo-Kaisen-app-pack-v1.0.0.zip" codex
+          cd "$GITHUB_WORKSPACE"
+          sha256sum Game-Codex-Shoujo-Kaisen-app-pack-v1.0.0.zip > Game-Codex-Shoujo-Kaisen-app-pack-v1.0.0.sha256
+          ls -lh Game-Codex-Shoujo-Kaisen-v1.0.0.apk Game-Codex-Shoujo-Kaisen-portable-v1.0.0.zip Game-Codex-Shoujo-Kaisen-app-pack-v1.0.0.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-codex-shoujo-kaisen-apk-v1.0.0
+          path: |
+            Game-Codex-Shoujo-Kaisen-v1.0.0.apk
+            Game-Codex-Shoujo-Kaisen-v1.0.0.sha256
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-codex-shoujo-kaisen-portable-v1.0.0
+          path: |
+            Game-Codex-Shoujo-Kaisen-portable-v1.0.0.zip
+            Game-Codex-Shoujo-Kaisen-portable-v1.0.0.sha256
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-codex-shoujo-kaisen-app-pack-v1.0.0
+          path: |
+            Game-Codex-Shoujo-Kaisen-app-pack-v1.0.0.zip
+            Game-Codex-Shoujo-Kaisen-app-pack-v1.0.0.sha256
+          if-no-files-found: error
