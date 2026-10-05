@@ -2,3 +2,4 @@ v1.0.0-production
 v1.0.0-sqlite-composite-fix
 v1.0.0-parser-and-dedupe-fix
 v1.0.0-stat-percent-grouping-fix
+v1.0.0-ui-syntax-fix
