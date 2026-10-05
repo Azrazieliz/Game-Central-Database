@@ -3,7 +3,7 @@ const state={
   gameId:null,section:'characters',query:'',
   filters:{rarity:'',faction:'',attribute:'',profession:'',sort:'name'},
   equipmentKind:'soul',rankingMode:'general_pve',teamMode:'general_pve',
-  teamAnchor:null,teamExclude:null,teamOwnedOnly:false,teamFixed:[]
+  teamAnchor:null,teamExclude:null,teamOwnedOnly:false,teamFixed:[],accountMode:'general_pve'
 };
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
