@@ -315,7 +315,7 @@ def main():
 
     catalog["rankings"]=rankings
     catalog["team_optimizer"]=build_team_optimizer(catalog,adapter)
-    catalog["adapter"]={"game_key":adapter["game_key"],"version":adapter["adapter_version"],"team_size":adapter["team_size"],"axes":adapter["axes"],"modes":adapter["modes"],"grade_thresholds":adapter["grade_thresholds"]}
+    catalog["adapter"]={"game_key":adapter["game_key"],"version":adapter["adapter_version"],"team_size":adapter["team_size"],"team_size_source":adapter.get("team_size_source"),"axes":adapter["axes"],"modes":adapter["modes"],"grade_thresholds":adapter["grade_thresholds"],"team_optimizer":adapter.get("team_optimizer") or {},"subsystems":adapter.get("subsystems") or {}}
     catalog["analysis_policy"]={
       "status":"production_v1",
       "source_tier_inputs":False,
