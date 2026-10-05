@@ -229,78 +229,188 @@ def target_from_japanese(s):
     return {}
 
 
-def jp_effect(sentence,etype,mechanic,polarity=None):
-    vals=[float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*[%％]",sentence)]
-    hits=None
-    for pat in (r"(\d+)回(?:攻撃|ダメージ)",r"敵に(\d+)回"):
-        m=re.search(pat,sentence)
-        if m:hits=int(m.group(1));break
+def jp_effect(sentence,etype,mechanic,polarity=None,percent_values=None,hits=None,target=None,extension=None):
+    vals=percent_values
+    if vals is None:
+        vals=[float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*[%％]",sentence)]
+    if hits is None:
+        for pat in (r"(\d+)回(?:攻撃|ダメージ)",r"敵に(\d+)回",r"(\d+)回回復"):
+            m=re.search(pat,sentence)
+            if m:hits=int(m.group(1));break
     dur=re.search(r"(\d+)ターン",sentence)
     cond={}
-    if any(x in sentence for x in ("場合","時","たびに","前","後")):cond["conditional"]=True
-    mag={"percent_values":vals}
+    if any(x in sentence for x in ("場合","時","たびに","前に","後に","以上","以下","未満","確率")):cond["conditional"]=True
+    mag={"percent_values":vals or []}
     if hits:mag["hits"]=hits
-    return {"effect_type":etype,"mechanic_key":mechanic,"polarity":polarity,"target":target_from_japanese(sentence),"magnitude":mag,"condition":cond,"timing":{"duration_rounds":int(dur.group(1))} if dur else {},"extension":{"source_sentence":clean(sentence),"source_language":"ja"}}
+    return {"effect_type":etype,"mechanic_key":mechanic,"polarity":polarity,"target":target if target is not None else target_from_japanese(sentence),"magnitude":mag,"condition":cond,"timing":{"duration_rounds":int(dur.group(1))} if dur else {},"extension":{"source_sentence":clean(sentence),"source_language":"ja",**(extension or {})}}
+
+
+def jp_status_key(name):
+    key=clean(name).lower()
+    key=re.sub(r"[^a-z0-9ぁ-んァ-ヶ一-龯]+","_",key).strip("_")
+    return "status:"+key if key else "status:unknown"
+
+
+def stat_percent(sentence,label):
+    # Capture the percentage that belongs to this stat rather than unrelated
+    # percentages elsewhere in the same source sentence.
+    patterns=[
+      rf"{label}[^。]{{0,18}}?[+＋]\s*(\d+(?:\.\d+)?)\s*[%％]",
+      rf"{label}[^。]{{0,18}}?[-−]\s*(\d+(?:\.\d+)?)\s*[%％]",
+      rf"{label}[^。]{{0,18}}?(?:上昇|増加|低下|減少)[^0-9]{{0,5}}(\d+(?:\.\d+)?)\s*[%％]",
+    ]
+    vals=[]
+    for p in patterns:
+        vals += [float(x) for x in re.findall(p,sentence)]
+    return vals
 
 
 def normalize_japanese(text):
     out=[]
-    sentences=[clean(x) for x in re.split(r"(?<=[。！？])|\n+",clean(text)) if clean(x)]
+    raw=clean(text)
+    sentences=[clean(x) for x in re.split(r"(?<=[。！？])|\n+",raw) if clean(x)]
+    pending_hits=None
+    hard_controls=("スタン","沈黙","凍結","眩暈","混乱","魅惑","麻痺","束縛","封印","睡眠","恐怖","行動不能")
     for s in sentences:
-        if "ダメージ" in s:
+        # A sentence that only declares hit count often precedes the actual coefficient.
+        hm=re.search(r"(\d+)回(?:ダメージを与える|攻撃(?:を)?する|攻撃する)",s)
+        if hm and not re.search(r"(?:物理|法術|貫通|真|戦闘)?ダメージを(?:与える|追加で与える)",s):
+            pending_hits=int(hm.group(1))
+
+        # Offensive damage: do NOT treat defensive strings such as 被ダメージ-300%
+        # as attacks. Require an actual damage-dealing verb.
+        dealing=bool(re.search(r"(?:物理|法術|貫通|真|戦闘)?ダメージ[^。]{0,20}(?:与える|与え|追加)",s))
+        if dealing:
             mech="piercing_damage" if "貫通ダメージ" in s else ("physical_damage" if "物理ダメージ" in s else ("magic_damage" if "法術ダメージ" in s else "damage"))
-            out.append(jp_effect(s,"damage",mech,"negative"))
-        if re.search(r"(?:HP[^。]{0,35}?回復|HPを[^。]{0,25}?回復|回復して復活|HPを回復)",s) and not any(x in s for x in ("回復不可","回復できない","HP回復不可")):
+            vals=[float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*[%％]",s)]
+            eff=jp_effect(s,"damage",mech,"negative",percent_values=vals,hits=pending_hits)
+            basis=None
+            for token,key in (("攻撃力","attack"),("筋力値","strength"),("敏捷値","agility"),("智力値","intelligence"),("防御力","defense"),("物理防護","physical_resist"),("法術防護","magic_resist"),("最大HP","max_hp"),("HP","hp")):
+                if token in s and re.search(re.escape(token)+r"[^。]{0,16}\d+(?:\.\d+)?\s*[%％]",s):
+                    basis=key;break
+            if basis:eff["extension"]["scaling_basis"]=basis
+            if re.search(r"(\d+(?:\.\d+)?)\s*[%％]\s*[～~-]\s*(\d+(?:\.\d+)?)\s*[%％]",s):
+                m=re.search(r"(\d+(?:\.\d+)?)\s*[%％]\s*[～~-]\s*(\d+(?:\.\d+)?)\s*[%％]",s)
+                lo,hi=float(m.group(1)),float(m.group(2));eff["magnitude"].update({"percent_min":lo,"percent_max":hi,"percent":(lo+hi)/2})
+            out.append(eff);pending_hits=None
+
+        # Healing/recovery. Kaisen frequently expresses healing as Attack X% worth of HP.
+        if re.search(r"(?:HP[^。]{0,40}?回復|HPを[^。]{0,35}?回復|回復して復活|回復をする|回復する)",s) and not any(x in s for x in ("回復不可","回復できない","HP回復不可","回復量")):
             out.append(jp_effect(s,"heal","healing","positive"))
-        if "復活" in s:
+
+        if "復活" in s or re.search(r"戦闘不能時[^。]{0,80}HP[^。]{0,20}回復",s):
             out.append(jp_effect(s,"revive","revive","positive"))
-        if "強化効果" in s and any(x in s for x in ("消去","解除","奪い取","減ら")):
+
+        # Buff/debuff removal and duration manipulation.
+        if "強化効果" in s and any(x in s for x in ("消去","解除","奪い取","減ら","ターン数-","効果ターン-","残りターン数-")):
             out.append(jp_effect(s,"dispel","buff","negative"))
-        if "状態異常" in s and any(x in s for x in ("消去","解除","残りターン数-")):
+        if "状態異常" in s and any(x in s for x in ("消去","解除","ターン数-","効果ターン-","残りターン数-")):
             out.append(jp_effect(s,"cleanse","status_effect","positive"))
-        if any(x in s for x in ("戦闘不能になるダメージ無効","HPが1以下にならない","HPは1以下にならない")):
+        if "状態異常" in s and any(x in s for x in ("ターン数+","効果ターン+","残りターン数+","延長")):
+            out.append(jp_effect(s,"debuff","status_duration_up","negative"))
+
+        # Defensive survival mechanics and caps.
+        if any(x in s for x in ("戦闘不能になるダメージ無効","HPが1以下にならない","HPは1以下にならない","戦闘不能になるダメージを無効")):
             out.append(jp_effect(s,"immunity","death_prevention","positive"))
-        if "ダメージ無効化" in s and "無視" not in s:
+        if any(x in s for x in ("会心ダメージ無効","戦闘ダメージ無効")) and "無視" not in s:
             out.append(jp_effect(s,"immunity","damage_immunity","positive"))
-        if any(x in s for x in ("回復不可","HP回復不可","HPを回復できない")):
-            out.append(jp_effect(s,"debuff","heal_block","negative"))
-        checks=[
-          (r"攻撃力[^。]{0,24}(?:\+|上昇)", "buff","attack_up","positive"),
-          (r"攻撃力[^。]{0,24}(?:-|低下)", "debuff","attack_down","negative"),
-          (r"防御力[^。]{0,24}(?:\+|上昇)", "buff","defense_up","positive"),
-          (r"防御力[^。]{0,24}(?:-|低下)", "debuff","defense_down","negative"),
-          (r"(?<!被)ダメージ[^。]{0,18}(?:\+|上昇)", "buff","damage_up","positive"),
-          (r"被ダメージ[^。]{0,24}(?:-|低下)", "buff","damage_reduction","positive"),
-          (r"被ダメージ[^。]{0,24}(?:\+|上昇)", "debuff","damage_taken_up","negative"),
-          (r"会心率[^。]{0,18}(?:\+|上昇)", "buff","crit_rate_up","positive"),
-          (r"会心ダメージ[^。]{0,18}(?:\+|上昇)", "buff","crit_damage_up","positive"),
-          (r"命中率[^。]{0,18}(?:\+|上昇)", "buff","hit_rate_up","positive"),
-          (r"回避率?[^。]{0,18}(?:\+|上昇)", "buff","dodge_up","positive"),
-          (r"ブロック率?[^。]{0,18}(?:\+|上昇)", "buff","block_rate_up","positive"),
-          (r"(?:防御貫通|防護貫通|徹甲)[^。]{0,18}(?:\+|上昇)", "buff","penetration_up","positive"),
-          (r"HP吸収[^。]{0,18}(?:\+|上昇)", "buff","lifesteal_up","positive"),
-          (r"状態異常耐性[^。]{0,18}(?:\+|上昇)", "buff","status_resist_up","positive"),
-          (r"HP上限[^。]{0,18}(?:\+|上昇)", "buff","hp_up","positive"),
-        ]
-        for pat,et,mk,pol in checks:
-            if re.search(pat,s):out.append(jp_effect(s,et,mk,pol))
-        if "シールド" in s or re.search(r"[聖魔魂]甲",s):
+        if ("ダメージ無効化" in s or "ダメージ無効" in s) and "無視" not in s:
+            out.append(jp_effect(s,"immunity","damage_immunity","positive"))
+        if re.search(r"(?:最大単体ダメージ|単体最大ダメージ)[^。]{0,50}(?:最大HP|HP)[^。]{0,15}\d+(?:\.\d+)?\s*[%％]",s):
+            out.append(jp_effect(s,"immunity","single_hit_damage_cap","positive"))
+        if "シールド" in s or re.search(r"[聖魔魂]甲",s) or "心鏡止水" in s:
             out.append(jp_effect(s,"shield","shield","positive"))
+
+        if any(x in s for x in ("回復不可","HP回復不可","HPを回復できない","禁療")):
+            out.append(jp_effect(s,"debuff","heal_block","negative"))
+
+        # Precise percentage stats. The effect percentage is restricted to the named
+        # stat where possible to avoid leaking another number from a long sentence.
+        checks=[
+          (r"攻撃力", "buff","attack_up","positive"),
+          (r"防御力", "buff","defense_up","positive"),
+          (r"会心率|会心値", "buff","crit_rate_up","positive"),
+          (r"会心ダメージ", "buff","crit_damage_up","positive"),
+          (r"命中率|命中値", "buff","hit_rate_up","positive"),
+          (r"回避率|回避値", "buff","dodge_up","positive"),
+          (r"ブロック率|ブロック値", "buff","block_rate_up","positive"),
+          (r"防御貫通|防護貫通|徹甲", "buff","penetration_up","positive"),
+          (r"HP吸収|hp吸収", "buff","lifesteal_up","positive"),
+          (r"状態異常耐性(?!無視)", "buff","status_resist_up","positive"),
+          (r"状態異常耐性無視", "buff","status_pierce_up","positive"),
+          (r"HP上限|hp上限", "buff","hp_up","positive"),
+          (r"物理防護", "buff","physical_resist_up","positive"),
+          (r"法術防護", "buff","magic_resist_up","positive"),
+          (r"被物理ダメージ(?!低下効果無視)", "buff","physical_damage_reduction","positive"),
+          (r"被法術ダメージ(?!低下効果無視)", "buff","magic_damage_reduction","positive"),
+          (r"被会心ダメージ", "buff","crit_damage_reduction","positive"),
+          (r"被ダメージ(?!低下効果無視)", "buff","damage_reduction","positive"),
+          (r"被ダメージ低下効果無視", "buff","damage_reduction_ignore","positive"),
+          (r"被物理ダメージ低下効果無視", "buff","physical_reduction_ignore","positive"),
+          (r"被法術ダメージ低下効果無視", "buff","magic_reduction_ignore","positive"),
+          (r"与ダメージ", "buff","damage_up","positive"),
+          (r"物理ダメージ(?!低下|無効)", "buff","physical_damage_up","positive"),
+          (r"法術ダメージ(?!低下|無効)", "buff","magic_damage_up","positive"),
+          (r"筋力値", "buff","strength_up","positive"),
+          (r"敏捷値", "buff","agility_up","positive"),
+          (r"智力値", "buff","intelligence_up","positive"),
+          (r"体力値", "buff","stamina_up","positive"),
+        ]
+        for label,et,mk,pol in checks:
+            vals=stat_percent(s,label)
+            if vals:
+                # Negative sign / explicit low/down on enemy-facing stat means debuff.
+                neg=bool(re.search(label+r"[^。]{0,18}(?:[-−]|低下|減少)",s))
+                target=target_from_japanese(s)
+                if neg and target.get("side")=="enemy":
+                    out.append(jp_effect(s,"debuff",mk.replace("_up","_down"),"negative",percent_values=vals))
+                else:
+                    out.append(jp_effect(s,et,mk,pol,percent_values=vals))
+
+        # Generic attack/defense down patterns that may not include an explicit target
+        # phrase in the same short sentence.
+        for label,mk in ((r"攻撃力","attack_down"),(r"防御力","defense_down"),(r"物理防護","physical_resist_down"),(r"法術防護","magic_resist_down"),(r"筋力値","strength_down"),(r"敏捷値","agility_down"),(r"智力値","intelligence_down")):
+            vals=[]
+            vals += [float(x) for x in re.findall(label+r"[^。]{0,18}[-−]\s*(\d+(?:\.\d+)?)\s*[%％]",s)]
+            vals += [float(x) for x in re.findall(label+r"[^。]{0,18}(?:低下|減少)[^0-9]{0,5}(\d+(?:\.\d+)?)\s*[%％]",s)]
+            if vals:out.append(jp_effect(s,"debuff",mk,"negative",percent_values=vals))
+
+        # Sakura/resource manipulation and triggered actions.
         if "落桜" in s:
-            if any(x in s for x in ("付与","獲得","回復する")):out.append(jp_effect(s,"resource_generate","sakura_petals","positive"))
-            if any(x in s for x in ("失う","奪い取","消去","減少")):out.append(jp_effect(s,"resource_consume","sakura_petals","negative"))
-        if "追加" in s and "スキル" in s and "発動" in s:
+            if any(x in s for x in ("付与","獲得","回復する","回復し","回復を")):out.append(jp_effect(s,"resource_generate","sakura_petals","positive"))
+            if any(x in s for x in ("失う","奪い取","消去","減少","回復不可")):out.append(jp_effect(s,"resource_consume","sakura_petals","negative"))
+        if re.search(r"(?:アクティブスキル|通常攻撃|スキル)[^。]{0,60}(?:追加で|追加|再度)?\s*(?:1回|\d+回)?[^。]{0,20}発動",s) or ("追加" in s and "発動" in s):
             out.append(jp_effect(s,"trigger","extra_skill_cast","positive"))
-        if "無視" in s and any(x in s for x in ("ダメージ無効","防御","防護","被会心ダメージ低下")):
+
+        # Explicit defensive bypasses / suppression.
+        if "無視" in s and any(x in s for x in ("ダメージ無効","防御","防護","被会心ダメージ低下","HPが1以下にならない","戦闘不能になるダメージ無効","単体ダメージ上限")):
             out.append(jp_effect(s,"counter","defensive_immunity","positive"))
-        if "会心" in s and any(x in s for x in ("発動しない","発動不可","会心になら")):
+        if "会心" in s and any(x in s for x in ("発動しない","発動不可","会心になら","会心は発動しない")):
             out.append(jp_effect(s,"debuff","crit_disable","negative"))
+
+        # Quoted named states are first-class normalized mechanics. Enemy-applied
+        # states contribute control; ally/self states contribute support/sustain.
+        for name in dict.fromkeys(re.findall(r"「([^」]{1,48})」",s)):
+            if not name or name in ("落桜","桜花解放"):continue
+            applied=bool(re.search(r"「"+re.escape(name)+r"」(?:効果)?[^。]{0,22}(?:付与|獲得|得る)",s))
+            if not applied:continue
+            target=target_from_japanese(s);key=jp_status_key(name)
+            if target.get("side")=="enemy" or name in hard_controls:
+                et="control" if any(x in name for x in hard_controls) else "debuff"
+                out.append(jp_effect(s,et,key,"negative",target=target,extension={"source_status_name":name}))
+            else:
+                out.append(jp_effect(s,"buff",key,"positive",target=target,extension={"source_status_name":name}))
+
+        # Hard-control text can occur without Japanese quotes.
+        for name in hard_controls:
+            if name in s and any(x in s for x in ("付与","状態","効果")):
+                out.append(jp_effect(s,"control","control:"+name,"negative",extension={"source_status_name":name}))
+
     ded=[];seen=set()
     for e in out:
-        key=(e["effect_type"],e["mechanic_key"],json.dumps(e.get("target",{}),sort_keys=True),e["extension"].get("source_sentence"))
+        key=(e["effect_type"],e["mechanic_key"],json.dumps(e.get("target",{}),sort_keys=True),json.dumps(e.get("magnitude",{}),sort_keys=True),e["extension"].get("source_sentence"))
         if key not in seen:seen.add(key);ded.append(e)
     return ded
-
 
 def normalize_source_text(text):
     raw=clean(text)
