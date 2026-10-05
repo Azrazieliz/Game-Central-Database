@@ -108,53 +108,63 @@
   "axes": {
     "offense": {
       "label": "Offensive pressure",
-      "reference": 6500,
-      "description": "Damage coefficients, target breadth, hit count, true/piercing damage and offensive amplification."
+      "reference": 6,
+      "description": "Log-scaled sourced damage pressure, target breadth, hit count, offensive amplification and defensive bypass.",
+      "transform": "log10"
     },
     "tempo": {
       "label": "Tempo / action economy",
       "reference": 7,
-      "description": "Extra casts/actions, pre-turn triggers, resource acceleration and repeat activation."
+      "description": "Extra casts/actions, pre-turn triggers, resource acceleration and repeat activation.",
+      "transform": "linear"
     },
     "survivability": {
       "label": "Survivability",
       "reference": 12,
-      "description": "Healing, shields, reduction, immunity, death prevention, revive, HP and defense."
+      "description": "Healing, shields, reduction, immunity, death prevention, revive, HP and defense.",
+      "transform": "linear"
     },
     "control": {
       "label": "Control",
       "reference": 9,
-      "description": "Hard/soft control, duration, breadth and repeat application."
+      "description": "Hard/soft control, duration, breadth and repeat application.",
+      "transform": "linear"
     },
     "support": {
       "label": "Support",
-      "reference": 12,
-      "description": "Team buffs, healing, shielding, cleanse, resource support and ally targeting."
+      "reference": 10,
+      "description": "Team buffs, healing, shielding, cleanse, resource support and ally targeting.",
+      "transform": "linear"
     },
     "disruption": {
       "label": "Disruption / counterplay",
       "reference": 10,
-      "description": "Dispel, anti-heal, defense bypass, buff removal, resource denial and immunity bypass."
+      "description": "Dispel, anti-heal, defense bypass, buff removal, resource denial and immunity bypass.",
+      "transform": "linear"
     },
     "reliability": {
       "label": "Reliability",
       "reference": 1,
-      "description": "How much of the kit works without fragile conditions, RNG or setup."
+      "description": "How much of the kit works without fragile conditions, RNG or setup.",
+      "transform": "linear"
     },
     "independence": {
       "label": "Independence",
       "reference": 1,
-      "description": "Self-enabling mechanics, self-sustain and low dependency on specific allies."
+      "description": "Self-enabling mechanics, self-sustain and low dependency on specific allies.",
+      "transform": "linear"
     },
     "synergy_ceiling": {
       "label": "Synergy ceiling",
-      "reference": 12,
-      "description": "Number and strength of mechanics that compound with compatible allies/subsystems."
+      "reference": 9,
+      "description": "Number and strength of mechanics that compound with compatible allies/subsystems.",
+      "transform": "linear"
     },
     "counter_resilience": {
       "label": "Counter resilience",
-      "reference": 10,
-      "description": "Cleanse, resist, immunity, redundancy, revive and ability to keep functioning under disruption."
+      "reference": 9,
+      "description": "Cleanse, resist, immunity, redundancy, revive and ability to keep functioning under disruption.",
+      "transform": "linear"
     }
   },
   "grade_thresholds": [
@@ -211,5 +221,11 @@
     "site": "Game8",
     "url": "https://game8.jp/shoujokaisen/418376",
     "evidence": "Recommended formations use six character slots; multiple skill descriptions also target six allies/enemies."
-  }
+  },
+  "evaluation_notes": [
+    "Damage coefficients are compared on a logarithmic scale because Shoujo Kaisen uses coefficients spanning several orders of magnitude.",
+    "Defensive reductions, immunities, revives, control, support and disruption are scored as mechanic contributions rather than being mistaken for outgoing damage.",
+    "Named status application is normalized as a first-class mechanic; unparsed source notes do not add power.",
+    "Scores are scenario indices from sourced mechanics, not simulated win rates unless a future adapter provides a validated combat simulator."
+  ]
 }
