@@ -49,7 +49,7 @@ function renderCharacterGrid(ownedOnly=false){
     const n=tpl.content.cloneNode(true),btn=n.querySelector('.character-card'),img=chooseImage(e,'grid_card',['card','portrait','icon']),im=n.querySelector('.character-art');if(img)im.src=assetSrc(img);
     n.querySelector('.rarity-badge').textContent=e.rarity_key||'';
     n.querySelector('.character-name').textContent=displayName(e);
-    const prof=(e.kaisen_meta?.professions||[]).map(professionLabel).join(' / ');
+    const prof=entityRoles(e).map(professionLabel).join(' / ');
     n.querySelector('.character-meta').textContent=[e.attribute_type,e.faction_key,prof].filter(Boolean).join(' • ');
     if(isOwned(e.id)){const owned=document.createElement('span');owned.className='owned-badge';owned.textContent='OWNED';n.querySelector('.character-art-wrap').appendChild(owned)}
     btn.onclick=()=>location.hash='character/'+e.id;grid.appendChild(n)
@@ -62,12 +62,12 @@ function renderRoster(body){
   $('#browserSearch').addEventListener('input',e=>{state.query=e.target.value;renderCharacterGrid(true)});$('#filterButton').onclick=renderFilters;renderCharacterGrid(true);
 }
 function renderEquipment(body){
-  body.innerHTML='<div class="segment-row">'+[['soul','Souls'],['martial_spirit','Martial Spirits'],['mount','Mounts']].map(([k,l])=>'<button class="segment '+(state.equipmentKind===k?'active':'')+'" data-kind="'+k+'">'+l+'</button>').join('')+'</div>'+searchBar('Search equipment…',false)+'<div class="count-row"><span class="result-count" id="resultCount"></span></div><div id="browserGrid"></div>';
+  const types=subsystemTypes();if(!types.some(x=>x.key===state.equipmentKind)&&types.length)state.equipmentKind=types[0].key;body.innerHTML='<div class="segment-row">'+types.map(x=>'<button class="segment '+(state.equipmentKind===x.key?'active':'')+'" data-kind="'+esc(x.key)+'">'+esc(x.label)+'</button>').join('')+'</div>'+searchBar('Search equipment…',false)+'<div class="count-row"><span class="result-count" id="resultCount"></span></div><div id="browserGrid"></div>';
   body.querySelectorAll('.segment').forEach(b=>b.onclick=()=>{state.equipmentKind=b.dataset.kind;state.query='';renderEquipment(body)});
   $('#browserSearch').addEventListener('input',e=>{state.query=e.target.value;renderEquipmentGrid()});renderEquipmentGrid();
 }
 function renderEquipmentGrid(){
-  const rows=subsystemRows(),grid=$('#browserGrid');$('#resultCount').textContent=rows.length+' '+({soul:'souls',martial_spirit:'martial spirits',mount:'mounts'})[state.equipmentKind];
+  const rows=subsystemRows(),grid=$('#browserGrid');const t=subsystemTypes().find(x=>x.key===state.equipmentKind);$('#resultCount').textContent=rows.length+' '+String(t?.label||state.equipmentKind).toLowerCase();
   grid.className='subsystem-grid';grid.innerHTML='';if(!rows.length){grid.innerHTML='<div class="empty-state"><strong>No records found</strong>Try a different search.</div>';return}
   const tpl=$('#subsystemCardTemplate');for(const s of rows){const n=tpl.content.cloneNode(true),btn=n.querySelector('.subsystem-card'),img=chooseImage(s,'grid_card',['card','icon']);if(img)n.querySelector('.subsystem-art').src=assetSrc(img);n.querySelector('.subsystem-name').textContent=s.name;n.querySelector('.subsystem-meta').textContent=s.subsystem_type==='soul'?(s.profession_fit||[]).map(professionLabel).join(' / ')||'Soul':s.subsystem_type.replace('_',' ');btn.onclick=()=>location.hash='subsystem/'+s.subsystem_type+'/'+encodeURIComponent(s.subsystem_key);grid.appendChild(n)}
 }
