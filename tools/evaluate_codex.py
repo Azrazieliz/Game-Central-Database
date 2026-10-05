@@ -65,8 +65,14 @@ def compatible(entity,subsystems,kind,adapter):
         roles=entity_roles(entity,rule.get("entity_field") if isinstance(rule,dict) else None)
         return [s for s in rows if not s.get("profession_fit") or roles.intersection(s.get("profession_fit") or [])]
     if rtype=="explicit_character_list":
-        hk=hero_key(entity)
-        return [s for s in rows if hk in set((s.get("compatibility") or {}).get("hero_keys") or [])]
+        key_mode=rule.get("entity_key") if isinstance(rule,dict) else None
+        if key_mode=="kaisen_asset_family":
+            entity_id=hero_key(entity)
+        else:
+            entity_id=get_path(entity,key_mode or "entity_key",entity.get("entity_key"))
+        sub_field=rule.get("subsystem_field") if isinstance(rule,dict) else None
+        allowed=lambda s: get_path(s,sub_field or "compatibility.hero_keys",[]) or []
+        return [s for s in rows if entity_id in set(allowed(s))]
     if rtype in ("universal","universal_unless_source_restricts",None):
         return rows
     # Unknown future rule types are conservative: do not assume compatibility.
