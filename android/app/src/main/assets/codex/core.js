@@ -29,7 +29,7 @@ function chooseImage(obj,role,types=[]){const imgs=(obj?.images||[]).filter(x=>x
 function keyFamily(e){return (e.entity_key||'').split(':').pop().replace(/^herocard_/,'').replace(/\d+$/,'')}
 function isLatinName(s){return !!s&&/[A-Za-z]/.test(s)&&!/[\u3040-\u30ff\u3400-\u9fff]/.test(s)}
 function buildFamilyBases(){const groups={};for(const e of catalog.entities||[])(groups[keyFamily(e)]??=[]).push(e);for(const [k,rows] of Object.entries(groups)){const candidates=rows.map(e=>e.display_name||e.canonical_name).filter(n=>isLatinName(n)&&!badNames.test(n)&&n.length<42&&!/[—·:&]/.test(n));if(candidates.length)familyBases[k]=candidates.sort((a,b)=>a.length-b.length)[0]}}
-function displayName(e){if(!e)return 'Unknown';if(e.display_name&&!badNames.test(e.display_name))return e.display_name;const raw=e.canonical_name||'Unnamed',base=familyBases[keyFamily(e)];if(badNames.test(raw)&&base)return base;if(!isLatinName(raw)&&base)return base;return raw}
+function displayName(e){if(!e)return 'Unknown';const preferred=e.display_name||'',raw=e.canonical_name||'Unnamed',base=familyBases[keyFamily(e)];if(preferred&&!badNames.test(preferred)&&isLatinName(preferred))return preferred;if(base)return base;if(preferred&&!badNames.test(preferred))return preferred;return raw}
 function gameById(id){return (catalog.games||[]).find(g=>Number(g.id)===Number(id))}
 function entityById(id){return (catalog.entities||[]).find(e=>Number(e.id)===Number(id))}
 function subsystemBy(type,key){return (catalog.subsystems||[]).find(s=>s.subsystem_type===type&&s.subsystem_key===key)}
@@ -69,4 +69,4 @@ function subsystemRows(){const q=state.query.trim().toLowerCase();return activeS
 function closeSheets(){$('#sheetBackdrop').classList.add('hidden');$('#filterSheet').classList.add('hidden');$('#settingsSheet').classList.add('hidden');document.body.classList.remove('no-scroll')}
 function openSheet(which){closeSheets();$('#sheetBackdrop').classList.remove('hidden');$('#'+which).classList.remove('hidden');document.body.classList.add('no-scroll')}
 function nativeCall(name){try{if(window.AndroidCodex&&typeof AndroidCodex[name]==='function')AndroidCodex[name]()}catch(e){}}
-function brand(){return '<div class="brand-row"><div class="brand-mark"></div><div><div class="brand-name">Game Codex</div><div class="brand-kicker">Offline intelligence library</div></div></div>'}
+function brand(){return '<div class="brand-row"><img class="brand-logo" src="brand-mark.svg" alt=""><div><div class="brand-name">GAME CODEX</div><div class="brand-kicker">Local game intelligence</div></div></div>'}
