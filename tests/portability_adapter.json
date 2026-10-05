@@ -1,0 +1,26 @@
+{
+  "adapter_version":"1.0.0",
+  "game_key":"portability_fixture",
+  "display_name":"Portability Fixture",
+  "team_size":3,
+  "canonical_name_source":"fixture",
+  "source_tiers_are_inputs":false,
+  "modes":{
+    "general":{"label":"General","description":"Fixture scenario","axis_weights":{"offense":0.2,"tempo":0.1,"survivability":0.15,"control":0.1,"support":0.1,"disruption":0.1,"reliability":0.1,"independence":0.05,"synergy_ceiling":0.05,"counter_resilience":0.05}}
+  },
+  "axes":{
+    "offense":{"label":"Offense","reference":4.0,"transform":"log10"},
+    "tempo":{"label":"Tempo","reference":5,"transform":"linear"},
+    "survivability":{"label":"Survivability","reference":8,"transform":"linear"},
+    "control":{"label":"Control","reference":6,"transform":"linear"},
+    "support":{"label":"Support","reference":6,"transform":"linear"},
+    "disruption":{"label":"Disruption","reference":6,"transform":"linear"},
+    "reliability":{"label":"Reliability","reference":1,"transform":"linear"},
+    "independence":{"label":"Independence","reference":1,"transform":"linear"},
+    "synergy_ceiling":{"label":"Synergy ceiling","reference":6,"transform":"linear"},
+    "counter_resilience":{"label":"Counter resilience","reference":6,"transform":"linear"}
+  },
+  "grade_thresholds":[{"min":90,"grade":"S+"},{"min":80,"grade":"S"},{"min":68,"grade":"A"},{"min":55,"grade":"B"},{"min":40,"grade":"C"},{"min":0,"grade":"D"}],
+  "subsystems":{"optimization_slots":["relic"],"types":{"relic":{"label":"Relics","singular":"Relic","compatibility":{"type":"universal"}}}},
+  "team_optimizer":{"team_size":3,"candidate_pool":12,"beam_width":20,"synergy_bonus_cap":10,"coverage_bonus_cap":8,"duplicate_profile_penalty_cap":5}
+}
