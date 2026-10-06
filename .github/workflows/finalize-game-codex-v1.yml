@@ -69,6 +69,7 @@ jobs:
           cp android/app/src/main/assets/codex/browser.js work/codex/browser.js
           cp android/app/src/main/assets/codex/detail.js work/codex/detail.js
           cp android/app/src/main/assets/codex/app.js work/codex/app.js
+          cp android/app/src/main/assets/codex/brand-mark.svg work/codex/brand-mark.svg
           node --check work/codex/core.js
           node --check work/codex/browser.js
           node --check work/codex/detail.js
@@ -149,7 +150,12 @@ jobs:
           assert '45.03/100' not in ui
           assert 'Characters' in ui and 'Rankings' in ui and 'Teams' in ui and 'Equipment' in ui and 'Roster' in ui
           assert 'team optimizer' in ui.lower()
-          print('GAME_CODEX_V1_VALID',r)
+          assert "detailTabButton('sources'" not in ui
+          assert '<div class="axis-legend">' not in ui
+          assert 'async function renderTeamResults' in ui and '_teamEdgeCache' in ui
+          assert 'hero-backdrop' in ui and 'hero-foreground' in ui
+          assert os.path.isfile('work/codex/brand-mark.svg')
+          print('GAME_CODEX_V1_VALID',r,'UNRESOLVED_QUARANTINED',len(unresolved))
           PY
 
       - name: Package full portable pack
