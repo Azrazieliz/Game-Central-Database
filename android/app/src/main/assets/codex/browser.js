@@ -1,10 +1,10 @@
 function renderHome(){
   show('homeScreen');
-  $('#homeScreen').innerHTML='<div class="home-wrap"><div class="home-top">'+brand()+'<button class="icon-button" id="homeSettings" aria-label="Settings">•••</button></div><div class="home-hero"><h1>Your games.<br>One Codex.</h1><p>Offline character databases, rankings, teams, equipment and roster planning.</p></div><div class="section-label">Library</div><div class="game-library" id="gameLibrary"></div></div>';
+  $('#homeScreen').innerHTML='<div class="home-wrap"><div class="home-top">'+brand()+'<button class="icon-button" id="homeSettings" aria-label="Settings">•••</button></div><div class="home-hero"><h1>One library.<br>Every game.</h1><p>Offline kits, rankings, teams, equipment and roster planning with every source kept auditable.</p></div><div class="section-label">Library</div><div class="game-library" id="gameLibrary"></div></div>';
   const grid=$('#gameLibrary');
   for(const g of catalog.games||[]){
     const btn=document.createElement('button');btn.className='game-tile';
-    const icon=g.icon_path?'<img src="'+esc(g.icon_path)+'" alt="">':'<div class="brand-mark"></div>';
+    const icon=g.icon_path?'<img src="'+esc(g.icon_path)+'" alt="">':'<img class="brand-logo" src="brand-mark.svg" alt="">';
     const count=Number(g.character_count||0)||catalog.entities.filter(e=>e.game_id===g.id).length;
     btn.innerHTML='<div class="game-tile-art">'+icon+'</div><span class="game-tile-name">'+esc(g.name)+'</span><span class="game-tile-meta">'+count+' characters • offline</span>';
     btn.onclick=()=>location.hash='game/'+g.id+'/characters';grid.appendChild(btn)
@@ -14,8 +14,8 @@ function renderHome(){
 function sectionLabel(s){return ({characters:'Characters',rankings:'Rankings',teams:'Teams',equipment:'Equipment',roster:'Roster'})[s]||s}
 function renderGame(){
   show('gameScreen');const g=gameById(state.gameId);if(!g){location.hash='';return}
-  const icon=g.icon_path?'<img class="game-mini-icon" src="'+esc(g.icon_path)+'" alt="">':'<div class="brand-mark"></div>';
-  $('#gameScreen').innerHTML='<div class="game-shell"><header class="game-appbar"><div class="game-appbar-row"><button class="icon-button" id="gameBack" aria-label="Back">‹</button><div class="game-title-block">'+icon+'<div><div class="game-title">'+esc(g.name)+'</div><div class="game-subtitle">Game Codex</div></div></div><button class="icon-button" id="gameSettings" aria-label="Settings">•••</button></div><nav class="tabs" id="gameTabs">'+['characters','rankings','teams','equipment','roster'].map(s=>'<button class="tab '+(state.section===s?'active':'')+'" data-section="'+s+'">'+sectionLabel(s)+'</button>').join('')+'</nav></header><main class="browser-body" id="browserBody"></main></div>';
+  const icon=g.icon_path?'<img class="game-mini-icon" src="'+esc(g.icon_path)+'" alt="">':'<img class="game-mini-icon" src="brand-mark.svg" alt="">';
+  $('#gameScreen').innerHTML='<div class="game-shell"><header class="game-appbar"><div class="game-appbar-row"><button class="icon-button" id="gameBack" aria-label="Back">‹</button><div class="game-title-block">'+icon+'<div><div class="game-title">'+esc(g.name)+'</div><div class="game-subtitle">Local Codex</div></div></div><button class="icon-button" id="gameSettings" aria-label="Settings">•••</button></div><nav class="tabs" id="gameTabs">'+['characters','rankings','teams','equipment','roster'].map(s=>'<button class="tab '+(state.section===s?'active':'')+'" data-section="'+s+'">'+sectionLabel(s)+'</button>').join('')+'</nav></header><main class="browser-body" id="browserBody"></main></div>';
   $('#gameBack').onclick=()=>location.hash='';
   $('#gameSettings').onclick=renderSettings;
   $('#gameTabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{state.section=b.dataset.section;state.query='';location.hash='game/'+state.gameId+'/'+state.section});
