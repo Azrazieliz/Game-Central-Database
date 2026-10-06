@@ -117,6 +117,8 @@ jobs:
           assert sanitation.get('normalized_skill_coverage',0) >= 0.85, sanitation
           assert sanitation.get('source_note_skills',0) >= 1
           assert sanitation.get('heroes_with_normalized_effects') == 528, sanitation
+          unresolved=[s for e in c['entities'] for s in e.get('skills',[]) if s.get('presentation_class') in ('unparsed','source_note')]
+          assert unresolved and all(s.get('analysis_eligible') is False for s in unresolved), 'Unresolved source entries leaked into analysis'
           assert r.get('avg_confidence',0) >= 0.85, r
           assert c['analysis_policy']['source_tier_inputs'] is False
           assert c['analysis_policy']['tier_quota'] is False
