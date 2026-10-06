@@ -67,3 +67,16 @@ These are durable project rules and supersede implementation shortcuts.
 
 ## Completion standard for a game adapter
 A game is considered platform-complete only when the generic shell can browse its characters, rankings, teams, equipment/subsystems, local roster, sources and portable export without game-specific UI code.
+
+
+## Freeze-pass UX requirements
+- Character grid cards use a visibly stronger framed edge; character full-art pages use the same visual framing language.
+- Character full art is shown at its native aspect ratio across the available width. Do not force-crop it and do not pad it with black side bars when the source art can fill the available width naturally.
+- Sources/provenance are available from the character overflow menu, not as a permanent top-level character tab.
+- Raw technical-audit JSON is not exposed in normal application UI. It remains in the portable/audit data.
+- Unparsed/source-note records are quarantined from the normal Kit screen; they remain retained in sourced data and can be counted in provenance/data-quality information.
+- Ranking pages do not show an always-visible wall of axis-name chips. Axis detail belongs inside character evaluation detail.
+- Repeated identical subsystem loadouts are grouped across scenarios instead of being rendered six times.
+- Empty personal rosters do not receive fake 'account-specific' recommendations; the UI first asks the user to mark owned characters.
+- Team optimization and full-roster account-value analysis must execute off the UI thread. A progress state remains interactive while computation runs, with a bounded fallback path if workers are unavailable.
+- The generic shell uses the Game Codex stacked-card mark and launcher identity; branding must remain consistent across the library, game header and Android launcher.
