@@ -61,28 +61,56 @@ function accountCoverageGain(candidate,owned,mode){
   let gain=0;for(const k of ['offense','tempo','survivability','control','support','disruption'])gain+=Math.max(0,Number(ca[k]?.score||0)-base[k]);
   return gain/6;
 }
-function accountValueRows(mode){
-  const owned=activeGameEntities().filter(e=>isOwned(e.id)),unowned=activeGameEntities().filter(e=>!isOwned(e.id)&&scenario(e,mode)),teamSize=Number(catalog.adapter?.team_size||6);
-  if(owned.length>=teamSize){
-    const ids=owned.map(e=>e.id),baselineTeam=optimizeTeam(mode,null,null,false,[],ids)[0];
-    if(!baselineTeam)return [];
-    const baseline=baselineTeam.components.total,baseIds=baselineTeam.ids;
-    return unowned.map(e=>{
-      let bestScore=baseline,bestIds=baseIds;
-      for(let i=0;i<baseIds.length;i++){
-        const trial=baseIds.slice();trial[i]=e.id;
-        const score=teamScore(trial,mode).total;
-        if(score>bestScore){bestScore=score;bestIds=trial}
-      }
-      return {entity:e,value:Math.max(0,bestScore-baseline),baseline,team:bestIds,kind:'team_gain'};
-    }).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
-  }
+function accountCoverageRows(mode){
+  const owned=activeGameEntities().filter(e=>isOwned(e.id)),unowned=activeGameEntities().filter(e=>!isOwned(e.id)&&scenario(e,mode));
   return unowned.map(e=>({entity:e,value:accountCoverageGain(e,owned,mode),kind:'coverage'})).sort((a,b)=>b.value-a.value||Number(scenario(b.entity,mode)?.score||0)-Number(scenario(a.entity,mode)?.score||0)).slice(0,20);
 }
-function renderAccountValue(){
-  const host=$('#accountValueList');if(!host)return;const rows=accountValueRows(state.accountMode);
+function accountWorkerPayload(mode){
+  const owned=ownedIds(),ctx=teamModeContext(mode),candidates=[...ctx.byId.values()];
+  const edges=[];
+  for(const [key,strength] of ctx.edges.entries()){
+    const [a,b]=key.split(':').map(Number);
+    if(owned.has(a)||owned.has(b))edges.push({a,b,strength});
+  }
+  return {
+    op:'account',mode,ownedIds:[...owned],
+    teamSize:Number(catalog.team_optimizer?.team_size||catalog.adapter?.team_size||6),
+    beamWidth:Math.min(Number(catalog.team_optimizer?.beam_width||120),96),
+    candidates:candidates.map(m=>({id:m.entity.id,score:m.score,axes:axisOrder.map(k=>Number(m.axes[k]?.score||0)),norm:m.norm})),
+    fixedIds:[],coverageAxes:(ctx.coverageAxes||[]).map(k=>axisOrder.indexOf(k)).filter(i=>i>=0),
+    synergyBonusCap:Number(catalog.adapter?.team_optimizer?.synergy_bonus_cap||15),
+    coverageBonusCap:Number(catalog.adapter?.team_optimizer?.coverage_bonus_cap||12),
+    redundancyPenaltyCap:Number(catalog.adapter?.team_optimizer?.duplicate_profile_penalty_cap||8),
+    edges
+  };
+}
+function runAccountWorker(payload,onProgress){
+  return new Promise((resolve,reject)=>{
+    let worker;try{worker=new Worker('optimizer_worker.js')}catch(err){reject(err);return}
+    let settled=false;
+    worker.onmessage=e=>{const msg=e.data||{};if(msg.type==='progress'){onProgress?.(msg);return}if(msg.type==='account_result'){settled=true;worker.terminate();resolve(msg.values||[]);return}if(msg.type==='error'){settled=true;worker.terminate();reject(new Error(msg.message||'Roster analysis failed'))}};
+    worker.onerror=e=>{if(!settled){settled=true;worker.terminate();reject(new Error(e.message||'Roster worker failed'))}};
+    worker.postMessage(payload);
+  });
+}
+async function renderAccountValue(){
+  const host=$('#accountValueList');if(!host)return;
+  const owned=activeGameEntities().filter(e=>isOwned(e.id)),teamSize=Number(catalog.adapter?.team_size||6);
+  let rows=[];
+  if(owned.length<teamSize){
+    rows=accountCoverageRows(state.accountMode);
+  }else{
+    host.innerHTML='<div class="optimizer-progress"><span class="spinner"></span><div><strong>Analyzing your roster</strong><small id="accountStatus">Building your best owned team…</small></div></div>';
+    try{
+      const values=await runAccountWorker(accountWorkerPayload(state.accountMode),msg=>{const s=$('#accountStatus');if(s)s.textContent=msg.label||'Comparing additions…'});
+      rows=values.map(x=>({entity:entityById(x.id),value:Number(x.value||0),baseline:x.baseline,team:x.bestTeam,kind:'team_gain'})).filter(x=>x.entity);
+    }catch(err){
+      rows=accountCoverageRows(state.accountMode);
+    }
+  }
+  if(!$('#accountValueList'))return;
   if(!rows.length){host.innerHTML='<div class="empty-state"><strong>No recommendations</strong>Your roster already contains every character.</div>';return}
-  host.innerHTML=rows.map((r,i)=>{const e=r.entity,img=chooseImage(e,'grid_card',['card']),sc=scenario(e,state.accountMode);const value=r.kind==='team_gain'?(r.value.toFixed(1)+' team gain'):(r.value.toFixed(1)+' coverage gain');return '<button class="account-value-row" data-id="'+e.id+'><span class="rank-number">#'+(i+1)+'</span>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<div><strong>'+esc(displayName(e))+'</strong><span>'+esc(sc?.grade||'')+' • '+Math.round(Number(sc?.score||0))+' scenario index</span><small>'+esc(value)+'</small></div></button>'}).join('');
+  host.innerHTML=rows.map((r,i)=>{const e=r.entity,img=chooseImage(e,'grid_card',['card']),sc=scenario(e,state.accountMode),value=r.kind==='team_gain'?(r.value.toFixed(1)+' team gain'):(r.value.toFixed(1)+' coverage gain');return '<button class="account-value-row" data-id="'+e.id+'><span class="rank-number">#'+(i+1)+'</span>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<div><strong>'+esc(displayName(e))+'</strong><span>'+esc(sc?.grade||'')+' • '+Math.round(Number(sc?.score||0))+' scenario index</span><small>'+esc(value)+'</small></div></button>'}).join('');
   host.querySelectorAll('.account-value-row').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
 }
 function renderRoster(body){
