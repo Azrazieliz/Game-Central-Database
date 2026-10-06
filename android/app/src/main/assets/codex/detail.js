@@ -16,6 +16,28 @@ function axisBars(axes){return '<div class="axis-grid">'+axisOrder.map(k=>{const
 function scenarioCards(e){const modes=rankingModes();return '<div class="scenario-grid">'+Object.entries(modes).map(([k,cfg])=>{const s=scenario(e,k);if(!s)return '';return '<div class="scenario-card"><div><span>'+esc(cfg.label||k)+'</span><strong class="'+gradeClass(s.grade)+'">'+esc(s.grade)+'</strong></div><p>#'+esc(s.rank)+' • '+Math.round(Number(s.score||0))+'/100</p><small>'+esc(confidenceLabel(s.confidence))+'</small></div>'}).join('')+'</div>'}
 function replacementBlock(e){const rv=evaluation(e)?.replacement_value||{},other=entityById(rv.nearest_substitute_id);if(!other)return '<p class="muted small">No substitute analysis available.</p>';return '<button class="replacement-card" data-id="'+other.id+'><div><span class="eyebrow">Closest mechanical substitute</span><strong>'+esc(displayName(other))+'</strong></div><div><b>'+Math.round(Number(rv.uniqueness||0))+'</b><span>Uniqueness</span></div></button>'}
 function analysisMethod(){return '<details class="technical method-note"><summary>How Codex evaluation works</summary><p>Each axis is derived from normalized sourced mechanics against fixed adapter benchmarks. Scenario scores combine those axes with published mode weights. Grades use absolute thresholds, not roster quotas. Source/community tier lists are never scoring inputs.</p></details>'}
+function tuneHero(img){
+  const box=img?.closest?.('.hero-visual');if(!box||!img.naturalWidth||!img.naturalHeight)return;
+  const imageRatio=img.naturalWidth/img.naturalHeight,boxRatio=box.clientWidth/Math.max(1,box.clientHeight);
+  const delta=Math.abs(Math.log(imageRatio/boxRatio));
+  box.classList.toggle('hero-cover-safe',delta<0.16);
+}
+function heroArtwork(src,title){
+  if(!src)return '<div class="hero-visual-placeholder">Full artwork not available</div>';
+  const safe=esc(src),alt=esc(title);
+  return '<div class="hero-backdrop" style="background-image:url(&quot;'+safe+'&quot;)"></div><img class="hero-foreground" src="'+safe+'" alt="'+alt+'" onload="tuneHero(this)">';
+}
+function renderCharacterMenu(e){
+  $('#settingsSheet').innerHTML='<div class="sheet-handle"></div><div class="sheet-head"><div><span class="eyebrow">Character</span><h2>'+esc(displayName(e))+'</h2></div><button class="icon-button" id="closeCharacterMenu">×</button></div><div class="settings-actions"><button id="openProvenance">Data & provenance</button><button id="openAppSettings">App settings</button></div>';
+  openSheet('settingsSheet');
+  $('#closeCharacterMenu').onclick=closeSheets;
+  $('#openProvenance').onclick=()=>renderDataProvenance(e);
+  $('#openAppSettings').onclick=renderSettings;
+}
+function renderDataProvenance(e){
+  $('#settingsSheet').innerHTML='<div class="sheet-handle"></div><div class="sheet-head"><div><span class="eyebrow">Audit</span><h2>Data & provenance</h2></div><button class="icon-button" id="closeProvenance">×</button></div><div class="provenance-sheet">'+renderSources(e)+'<details class="technical audit-disclosure"><summary>Technical audit data</summary><pre>'+esc(JSON.stringify({entity_key:e.entity_key,identity_resolution:e.identity_resolution||null,evaluation_version:evaluation(e)?.version||null,engine:catalog.engine_version},null,2))+'</pre></details></div>';
+  openSheet('settingsSheet');$('#closeProvenance').onclick=closeSheets;
+}
 function renderOverview(e){
   const ev=evaluation(e),axes=ev?.axes?.base||{},prof=entityRoles(e).map(professionLabel).join(' / ');
   return '<section class="panel-section"><h2>Profile</h2><div class="metric-grid"><div class="metric"><span>Role</span><strong>'+esc(prof||'—')+'</strong></div><div class="metric"><span>Attribute</span><strong>'+esc(e.attribute_type||'—')+'</strong></div><div class="metric"><span>Faction</span><strong>'+esc(e.faction_key||'—')+'</strong></div><div class="metric"><span>Rarity</span><strong>'+esc(e.rarity_key||'—')+'</strong></div></div></section>'+
@@ -27,9 +49,9 @@ function renderOverview(e){
 function detailTabButton(key,label,active){return '<button class="detail-tab '+(active===key?'active':'')+'" data-detail-tab="'+key+'">'+label+'</button>'}
 function renderCharacter(id,tab='overview'){
   const e=entityById(Number(id));if(!e){location.hash='game/'+(state.gameId||1)+'/characters';return}state.gameId=e.game_id;show('detailScreen');
-  const full=chooseImage(e,'detail_primary',['full_art','splash']),title=displayName(e),chips=[e.rarity_key,e.attribute_type,e.faction_key,...entityRoles(e).map(professionLabel)].filter(Boolean),owned=isOwned(e.id);
-  $('#detailScreen').innerHTML='<div class="detail-shell"><header class="detail-appbar"><button class="icon-button" id="detailBack">‹</button><div class="detail-appbar-title">'+esc(title)+'</div><button class="roster-toggle '+(owned?'active':'')+'" id="rosterToggle">'+(owned?'Owned':'Add to roster')+'</button><button class="icon-button" id="detailSettings">•••</button></header><div class="detail-content"><section class="hero-visual">'+(full?'<img src="'+esc(assetSrc(full))+'" alt="'+esc(title)+'">':'<div class="hero-visual-placeholder">Full artwork not available</div>')+'<div class="hero-gradient"></div><div class="hero-title-overlay"><h1>'+esc(title)+'</h1><div class="chip-row">'+chips.map(x=>'<span class="chip">'+esc(x)+'</span>').join('')+'</div></div></section><nav class="detail-nav">'+detailTabButton('overview','Overview',tab)+detailTabButton('kit','Kit',tab)+detailTabButton('synergy','Synergy',tab)+detailTabButton('loadout','Loadout',tab)+detailTabButton('bonds','Bonds',tab)+detailTabButton('sources','Sources',tab)+'</nav><main class="detail-panel" id="detailPanel"></main></div></div>';
-  $('#detailBack').onclick=()=>location.hash='game/'+e.game_id+'/characters';$('#detailSettings').onclick=renderSettings;
+  const full=chooseImage(e,'detail_primary',['full_art','splash']),src=full?assetSrc(full):'',title=displayName(e),chips=[e.rarity_key,e.attribute_type,e.faction_key,...entityRoles(e).map(professionLabel)].filter(Boolean),owned=isOwned(e.id);
+  $('#detailScreen').innerHTML='<div class="detail-shell"><header class="detail-appbar"><button class="icon-button" id="detailBack">‹</button><div class="detail-appbar-title">'+esc(title)+'</div><button class="roster-toggle '+(owned?'active':'')+'" id="rosterToggle">'+(owned?'Owned':'Add to roster')+'</button><button class="icon-button" id="detailMore" aria-label="More">•••</button></header><div class="detail-content"><section class="hero-visual">'+heroArtwork(src,title)+'<div class="hero-frame"></div><div class="hero-gradient"></div><div class="hero-title-overlay"><h1>'+esc(title)+'</h1><div class="chip-row">'+chips.map(x=>'<span class="chip">'+esc(x)+'</span>').join('')+'</div></div></section><nav class="detail-nav">'+detailTabButton('overview','Overview',tab)+detailTabButton('kit','Kit',tab)+detailTabButton('synergy','Synergy',tab)+detailTabButton('loadout','Loadout',tab)+detailTabButton('bonds','Bonds',tab)+'</nav><main class="detail-panel" id="detailPanel"></main></div></div>';
+  $('#detailBack').onclick=()=>location.hash='game/'+e.game_id+'/characters';$('#detailMore').onclick=()=>renderCharacterMenu(e);
   $('#rosterToggle').onclick=()=>{setOwned(e.id,!isOwned(e.id));renderCharacter(e.id,tab)};
   $('#detailScreen').querySelectorAll('.detail-tab').forEach(b=>b.onclick=()=>renderCharacter(e.id,b.dataset.detailTab));
   const panel=$('#detailPanel');
@@ -38,12 +60,11 @@ function renderCharacter(id,tab='overview'){
   if(tab==='synergy')panel.innerHTML='<section class="panel-section"><h2>Mechanic matches</h2><p class="muted small">Teammate links come from normalized mechanic compatibility, not copied recommendation lists.</p>'+renderCompat(e)+'</section>';
   if(tab==='loadout')panel.innerHTML='<section class="panel-section"><div class="section-head"><div><span class="eyebrow">Subsystems</span><h2>Optimized loadouts</h2></div></div>'+Object.entries(rankingModes()).map(([k,cfg])=>'<div class="mode-loadout"><h3>'+esc(cfg.label||k)+'</h3>'+renderLoadout(e,k)+'</div>').join('')+'</section>';
   if(tab==='bonds')panel.innerHTML='<section class="panel-section"><h2>Bonds</h2>'+renderBonds(e)+'</section>';
-  if(tab==='sources')panel.innerHTML='<section class="panel-section"><h2>Sources</h2>'+renderSources(e)+'</section><section class="panel-section technical"><details><summary>Technical audit</summary><pre>'+esc(JSON.stringify({entity_key:e.entity_key,identity_resolution:e.identity_resolution||null,evaluation_version:evaluation(e)?.version||null,engine:catalog.engine_version},null,2))+'</pre></details></section>';
   panel.querySelectorAll('.compat-card,.replacement-card').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
   panel.querySelectorAll('.loadout-slot').forEach(b=>b.onclick=()=>location.hash='subsystem/'+b.dataset.type+'/'+encodeURIComponent(b.dataset.key));
 }
 function renderSubsystem(type,key){
-  const s=subsystemBy(type,key);if(!s){location.hash='game/'+(state.gameId||1)+'/equipment';return}show('detailScreen');const img=chooseImage(s,'grid_card',['card','icon']),max=s.max_profile||{},progress=s.progression||[];
+  const s=subsystemBy(type,key);if(!s){location.hash='game/'+(state.gameId||1)+'/equipment';return}show('detailScreen');const img=chooseImage(s,'grid_card',['card','icon']),src=img?assetSrc(img):'',max=s.max_profile||{},progress=s.progression||[];
   $('#detailScreen').innerHTML='<div class="detail-shell"><header class="detail-appbar"><button class="icon-button" id="detailBack">‹</button><div class="detail-appbar-title">'+esc(s.name)+'</div><button class="icon-button" id="detailSettings">•••</button></header><div class="detail-content"><section class="hero-visual">'+(img?'<img src="'+esc(assetSrc(img))+'" alt="'+esc(s.name)+'">':'<div class="hero-visual-placeholder">No visual</div>')+'<div class="hero-gradient"></div><div class="hero-title-overlay"><h1>'+esc(s.name)+'</h1><div class="chip-row"><span class="chip">'+esc(s.subsystem_type.replace('_',' '))+'</span></div></div></section><main class="detail-panel"><section class="panel-section"><h2>Max profile</h2><p class="skill-desc">'+esc(max.description||'No max-level description available.')+'</p>'+(max.set_bonuses||[]).map(x=>'<div class="strength-item"><strong>'+esc(x.piecesRequired)+'pc</strong><span>'+esc(x.desc)+'</span></div>').join('')+'</section>'+(progress.length?'<section class="panel-section"><h2>Progression</h2>'+progress.map(x=>'<div class="skill-card"><div class="skill-head"><div class="skill-name">'+esc(x.name||('Level '+x.level))+'</div><span class="skill-type">'+esc(x.quality||'')+'</span></div><p class="skill-desc">'+esc(x.description||'')+'</p></div>').join('')+'</section>':'')+'<section class="panel-section"><h2>Source</h2><div class="source-item"><strong>Kaisen Wiki</strong><p>'+esc(s.source_url||'')+'</p></div></section></main></div></div>';
   $('#detailBack').onclick=()=>location.hash='game/'+(state.gameId||1)+'/equipment';$('#detailSettings').onclick=renderSettings;
 }
