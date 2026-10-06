@@ -60,13 +60,49 @@ function optimize(payload){
   }
   return out;
 }
+function accountValue(payload){
+  const owned=new Set((payload.ownedIds||[]).map(Number));
+  const ownedCandidates=(payload.candidates||[]).filter(x=>owned.has(Number(x.id)));
+  const unowned=(payload.candidates||[]).filter(x=>!owned.has(Number(x.id)));
+  if(ownedCandidates.length<Number(payload.teamSize||6))return [];
+  const baselinePayload={...payload,op:'optimize',candidates:ownedCandidates,fixedIds:[]};
+  const baselineTeams=optimize(baselinePayload);
+  if(!baselineTeams.length)return [];
+  const baseline=baselineTeams[0];
+
+  const byId=new Map((payload.candidates||[]).map(x=>[Number(x.id),x]));
+  const edges=new Map((payload.edges||[]).map(x=>[edgeKey(Number(x.a),Number(x.b)),Number(x.strength||0)]));
+  const ctx={byId,edges,coverageAxes:payload.coverageAxes||[],synergyBonusCap:Number(payload.synergyBonusCap||15),coverageBonusCap:Number(payload.coverageBonusCap||12),redundancyPenaltyCap:Number(payload.redundancyPenaltyCap||8)};
+  const values=[];
+  for(let n=0;n<unowned.length;n++){
+    const candidate=unowned[n];let best=baseline.components.total,bestIds=baseline.ids;
+    for(let i=0;i<baseline.ids.length;i++){
+      const trial=baseline.ids.slice();trial[i]=Number(candidate.id);
+      const comp=teamComponents(trial,ctx);
+      if(comp.total>best){best=comp.total;bestIds=trial}
+    }
+    values.push({id:Number(candidate.id),value:Math.max(0,best-baseline.components.total),baseline:baseline.components.total,bestTeam:bestIds});
+    if(n%60===0)postMessage({type:'progress',label:'Comparing roster additions '+Math.min(n+1,unowned.length)+' / '+unowned.length+'…'});
+  }
+  values.sort((a,b)=>b.value-a.value||Number(byId.get(b.id)?.score||0)-Number(byId.get(a.id)?.score||0));
+  return values.slice(0,20);
+}
 onmessage=function(e){
   const p=e.data||{};
   try{
-    if(p.op!=='optimize')throw new Error('Unknown optimizer operation');
-    postMessage({type:'progress',depth:(p.fixedIds||[]).length,label:'Preparing '+(p.candidates||[]).length+' candidates…'});
-    const teams=optimize(p);
-    postMessage({type:'result',teams});
+    if(p.op==='optimize'){
+      postMessage({type:'progress',depth:(p.fixedIds||[]).length,label:'Preparing '+(p.candidates||[]).length+' candidates…'});
+      const teams=optimize(p);
+      postMessage({type:'result',teams});
+      return;
+    }
+    if(p.op==='account'){
+      postMessage({type:'progress',label:'Building your roster baseline…'});
+      const values=accountValue(p);
+      postMessage({type:'account_result',values});
+      return;
+    }
+    throw new Error('Unknown optimizer operation');
   }catch(err){
     postMessage({type:'error',message:String(err&&err.message||err)});
   }
