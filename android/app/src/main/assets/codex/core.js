@@ -70,4 +70,4 @@ function subsystemRows(){const q=state.query.trim().toLowerCase();return activeS
 function closeSheets(){$('#sheetBackdrop').classList.add('hidden');$('#filterSheet').classList.add('hidden');$('#settingsSheet').classList.add('hidden');document.body.classList.remove('no-scroll')}
 function openSheet(which){closeSheets();$('#sheetBackdrop').classList.remove('hidden');$('#'+which).classList.remove('hidden');document.body.classList.add('no-scroll')}
 function nativeCall(name){try{if(window.AndroidCodex&&typeof AndroidCodex[name]==='function')AndroidCodex[name]()}catch(e){}}
-function brand(){return '<div class="brand-row"><img class="brand-logo" src="brand-mark.svg" alt=""><div><div class="brand-name">GAME CODEX</div><div class="brand-kicker">Local game intelligence</div></div></div>'}
+function brand(){return '<div class="brand-row"><img class="brand-logo" src="brand-mark.svg" alt=""><div><div class="brand-name">GAME CODEX</div><div class="brand-kicker">Local game database</div></div></div>'}
