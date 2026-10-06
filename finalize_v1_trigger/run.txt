@@ -8,3 +8,4 @@ v1.0.1-video-polish-freeze
 v1.0.0-final-video-polish-gate-fix
 v1.0.0-clean-labels-final
 v1.0.0-recording-freeze-polish
+v1.0.0-final-recording-pass
