@@ -208,6 +208,53 @@ function fixedTeamChips(){
   if(!state.teamFixed.length)return '<span class="muted small">No locked members.</span>';
   return state.teamFixed.map(id=>{const e=entityById(id);return '<button class="locked-chip" data-remove-fixed="'+id+'>'+esc(displayName(e))+' ×</button>'}).join('');
 }
+function optimizerPayload(mode,anchorId,excludeId,ownedOnly,fixedIds=[]){
+  const owned=ownedIds(),ctx=teamModeContext(mode),fixed=[...new Set([...(fixedIds||[]),...(anchorId?[anchorId]:[])])].filter(id=>id!==excludeId);
+  let candidates=[...ctx.byId.values()].filter(m=>m.entity.id!==excludeId&&(!ownedOnly||owned.has(m.entity.id)));
+  candidates.sort((a,b)=>b.score-a.score);
+  const pool=Math.min(Number(catalog.team_optimizer?.candidate_pool||48),48);
+  candidates=candidates.slice(0,pool);
+  for(const id of fixed){
+    if(!candidates.some(x=>x.entity.id===id)){
+      const m=ctx.byId.get(id);if(m)candidates.unshift(m);
+    }
+  }
+  const candidateIds=new Set(candidates.map(x=>x.entity.id));
+  const edges=[];
+  for(const [key,strength] of ctx.edges.entries()){
+    const [a,b]=key.split(':').map(Number);
+    if(candidateIds.has(a)&&candidateIds.has(b))edges.push({a,b,strength});
+  }
+  return {
+    op:'optimize',
+    mode,
+    teamSize:Number(catalog.team_optimizer?.team_size||catalog.adapter?.team_size||6),
+    beamWidth:Math.min(Number(catalog.team_optimizer?.beam_width||120),96),
+    candidates:candidates.map(m=>({id:m.entity.id,score:m.score,axes:axisOrder.map(k=>Number(m.axes[k]?.score||0)),norm:m.norm})),
+    fixedIds:fixed,
+    excludeId:excludeId||null,
+    coverageAxes:(ctx.coverageAxes||[]).map(k=>axisOrder.indexOf(k)).filter(i=>i>=0),
+    synergyBonusCap:Number(catalog.adapter?.team_optimizer?.synergy_bonus_cap||15),
+    coverageBonusCap:Number(catalog.adapter?.team_optimizer?.coverage_bonus_cap||12),
+    redundancyPenaltyCap:Number(catalog.adapter?.team_optimizer?.duplicate_profile_penalty_cap||8),
+    edges
+  };
+}
+function runOptimizerWorker(payload,onProgress){
+  return new Promise((resolve,reject)=>{
+    let worker;
+    try{worker=new Worker('optimizer_worker.js')}catch(err){reject(err);return}
+    let settled=false;
+    worker.onmessage=e=>{
+      const msg=e.data||{};
+      if(msg.type==='progress'){onProgress?.(msg);return}
+      if(msg.type==='result'){settled=true;worker.terminate();resolve(msg.teams||[]);return}
+      if(msg.type==='error'){settled=true;worker.terminate();reject(new Error(msg.message||'Optimizer failed'))}
+    };
+    worker.onerror=e=>{if(!settled){settled=true;worker.terminate();reject(new Error(e.message||'Optimizer worker failed'))}};
+    worker.postMessage(payload);
+  });
+}
 function renderTeams(body){
   if(!rankingModes()[state.teamMode])state.teamMode=Object.keys(rankingModes())[0]||'general_pve';
   const chars=activeGameEntities().slice().sort((a,b)=>displayName(a).localeCompare(displayName(b))),opts='<option value="">None</option>'+chars.map(e=>'<option value="'+e.id+'">'+esc(displayName(e))+'</option>').join('');
@@ -224,13 +271,26 @@ function renderTeams(body){
 async function renderTeamResults(){
   const host=$('#teamResults'),teamSize=Number(catalog.adapter?.team_size||6),button=$('#runTeam');
   if(state.teamOwnedOnly&&ownedIds().size<teamSize){host.innerHTML='<div class="empty-state"><strong>Not enough owned characters</strong>Add at least '+teamSize+' characters to your roster.</div>';return}
+  const fixed=[...new Set([...(state.teamFixed||[]),...(state.teamAnchor?[state.teamAnchor]:[])])].filter(id=>id!==state.teamExclude);
+  if(fixed.length>teamSize){host.innerHTML='<div class="empty-state"><strong>Too many locked characters</strong>Remove a locked member and try again.</div>';return}
   state.teamBusy=true;if(button){button.disabled=true;button.textContent='Optimizing…'}
-  host.innerHTML='<div class="optimizer-progress"><span class="spinner"></span><div><strong>Building teams</strong><small>Comparing scenario fit, synergy and coverage.</small></div></div>';
-  await new Promise(resolve=>setTimeout(resolve,32));
+  host.innerHTML='<div class="optimizer-progress"><span class="spinner"></span><div><strong>Building teams</strong><small id="optimizerStatus">Preparing candidates…</small></div></div>';
   try{
-    const teams=optimizeTeam(state.teamMode,state.teamAnchor,state.teamExclude,state.teamOwnedOnly,state.teamFixed);
+    const payload=optimizerPayload(state.teamMode,state.teamAnchor,state.teamExclude,state.teamOwnedOnly,state.teamFixed);
+    let teams;
+    try{
+      teams=await runOptimizerWorker(payload,msg=>{const s=$('#optimizerStatus');if(s)s.textContent=msg.label||('Evaluating '+(msg.depth||1)+'/'+payload.teamSize+' team slots…')});
+    }catch(err){
+      // Last-resort compatibility path for WebViews without Worker support.
+      const s=$('#optimizerStatus');if(s)s.textContent='Using compatibility fallback…';
+      await new Promise(resolve=>setTimeout(resolve,24));
+      const oldPool=catalog.team_optimizer?.candidate_pool;
+      if(catalog.team_optimizer)catalog.team_optimizer.candidate_pool=Math.min(Number(oldPool||24),20);
+      teams=optimizeTeam(state.teamMode,state.teamAnchor,state.teamExclude,state.teamOwnedOnly,state.teamFixed);
+      if(catalog.team_optimizer)catalog.team_optimizer.candidate_pool=oldPool;
+    }
     if(!teams.length){host.innerHTML='<div class="empty-state"><strong>No valid team</strong>Change the constraints and try again.</div>';return}
-    host.innerHTML=teams.map((t,idx)=>'<section class="team-result"><div class="team-result-head"><div><span class="eyebrow">'+(idx===0?'Best match':'Alternative '+idx)+'</span><h3>'+Math.round(t.components.total)+' team fit</h3></div><div class="team-components"><span>Base '+Math.round(t.components.base)+'</span><span>Synergy +'+t.components.synergy.toFixed(1)+'</span><span>Coverage +'+t.components.coverage.toFixed(1)+'</span>'+(t.components.redundancy?'<span>Overlap −'+t.components.redundancy.toFixed(1)+'</span>':'')+'</div></div><div class="team-cards">'+t.ids.map(id=>{const e=entityById(id),img=chooseImage(e,'grid_card',['card']);return '<button class="team-member" data-id="'+id+'>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<strong>'+esc(displayName(e))+'</strong><span>'+esc(scenario(e,state.teamMode)?.grade||'')+'</span></button>'}).join('')+'</div></section>').join('');
+    host.innerHTML=teams.map((t,idx)=>'<section class="team-result"><div class="team-result-head"><div><span class="eyebrow">'+(idx===0?'Best match':'Alternative '+idx)+'</span><h3>'+Math.round(t.components.total)+' team fit</h3></div><div class="team-components"><span>Base '+Math.round(t.components.base)+'</span><span>Synergy +'+Number(t.components.synergy||0).toFixed(1)+'</span><span>Coverage +'+Number(t.components.coverage||0).toFixed(1)+'</span>'+(t.components.redundancy?'<span>Overlap −'+Number(t.components.redundancy).toFixed(1)+'</span>':'')+'</div></div><div class="team-cards">'+t.ids.map(id=>{const e=entityById(id),img=chooseImage(e,'grid_card',['card']);return '<button class="team-member" data-id="'+id+'>'+(img?'<img src="'+esc(assetSrc(img))+'" alt="">':'')+'<strong>'+esc(displayName(e))+'</strong><span>'+esc(scenario(e,state.teamMode)?.grade||'')+'</span></button>'}).join('')+'</div></section>').join('');
     host.querySelectorAll('.team-member').forEach(b=>b.onclick=()=>location.hash='character/'+b.dataset.id);
   }finally{
     state.teamBusy=false;const live=$('#runTeam');if(live){live.disabled=false;live.textContent='Optimize team'}
@@ -238,4 +298,4 @@ async function renderTeamResults(){
 }
 
 function renderFilters(){const rows=activeGameEntities(),vals=k=>[...new Set(rows.map(e=>e[k]).filter(Boolean))].sort(),professions=[...new Set(rows.flatMap(e=>entityRoles(e)))].sort(),options=(arr,current,fmt=x=>x)=>'<option value="">All</option>'+arr.map(v=>'<option value="'+esc(v)+'" '+(current===v?'selected':'')+'>'+esc(fmt(v))+'</option>').join('');$('#filterSheet').innerHTML='<div class="sheet-handle"></div><div class="sheet-head"><h2>Character filters</h2><button class="icon-button" id="closeFilter">×</button></div><div class="sheet-grid"><div class="sheet-field"><label>Rarity</label><select id="fRarity">'+options(vals('rarity_key'),state.filters.rarity)+'</select></div><div class="sheet-field"><label>Faction</label><select id="fFaction">'+options(vals('faction_key'),state.filters.faction,factionLabel)+'</select></div><div class="sheet-field"><label>Attribute</label><select id="fAttribute">'+options(vals('attribute_type'),state.filters.attribute)+'</select></div><div class="sheet-field"><label>Role</label><select id="fProfession">'+options(professions,state.filters.profession,professionLabel)+'</select></div><div class="sheet-field"><label>Sort</label><select id="fSort"><option value="name" '+(state.filters.sort==='name'?'selected':'')+'>Name</option><option value="release" '+(state.filters.sort==='release'?'selected':'')+'>Newest</option><option value="rarity" '+(state.filters.sort==='rarity'?'selected':'')+'>Rarity</option></select></div></div><div class="sheet-actions"><button class="secondary-button" id="clearFilters">Clear</button><button class="primary-button" id="applyFilters">Apply</button></div>';openSheet('filterSheet');$('#closeFilter').onclick=closeSheets;$('#clearFilters').onclick=()=>{state.filters={rarity:'',faction:'',attribute:'',profession:'',sort:'name'};closeSheets();renderGameSection()};$('#applyFilters').onclick=()=>{state.filters.rarity=$('#fRarity').value;state.filters.faction=$('#fFaction').value;state.filters.attribute=$('#fAttribute').value;state.filters.profession=$('#fProfession').value;state.filters.sort=$('#fSort').value;closeSheets();renderGameSection()}}
-function renderSettings(){$('#settingsSheet').innerHTML='<div class="sheet-handle"></div><div class="sheet-head"><h2>Game Codex</h2><button class="icon-button" id="closeSettings">×</button></div><div class="settings-actions"><button id="importPack">Import database pack</button><button id="reloadApp">Reload app</button><button id="restorePack">Restore bundled database</button><button id="appInfo">Android app information</button></div><div class="settings-meta">Engine '+esc(catalog.engine_version||'unknown')+' • Adapter '+esc(catalog.adapter?.version||'—')+'<br>Personal roster data is stored locally on this device. Source provenance stays available in character Sources.</div>';openSheet('settingsSheet');$('#closeSettings').onclick=closeSheets;$('#importPack').onclick=()=>{closeSheets();nativeCall('choosePack')};$('#reloadApp').onclick=()=>{closeSheets();nativeCall('reload')};$('#restorePack').onclick=()=>{closeSheets();nativeCall('restoreBundledPack')};$('#appInfo').onclick=()=>{closeSheets();nativeCall('appInfo')}}
+function renderSettings(){$('#settingsSheet').innerHTML='<div class="sheet-handle"></div><div class="sheet-head"><h2>Game Codex</h2><button class="icon-button" id="closeSettings">×</button></div><div class="settings-actions"><button id="importPack">Import database pack</button><button id="reloadApp">Reload app</button><button id="restorePack">Restore bundled database</button><button id="appInfo">Android app information</button></div><div class="settings-meta">Engine '+esc(catalog.engine_version||'unknown')+' • Adapter '+esc(catalog.adapter?.version||'—')+'<br>Personal roster data is stored locally on this device. Source provenance stays available from the character menu.</div>';openSheet('settingsSheet');$('#closeSettings').onclick=closeSheets;$('#importPack').onclick=()=>{closeSheets();nativeCall('choosePack')};$('#reloadApp').onclick=()=>{closeSheets();nativeCall('reload')};$('#restorePack').onclick=()=>{closeSheets();nativeCall('restoreBundledPack')};$('#appInfo').onclick=()=>{closeSheets();nativeCall('appInfo')}}
