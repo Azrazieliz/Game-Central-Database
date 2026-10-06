@@ -4,3 +4,4 @@ v1.0.0-parser-and-dedupe-fix
 v1.0.0-stat-percent-grouping-fix
 v1.0.0-ui-syntax-fix
 v1.0.0-coverage-gate-final
+v1.0.1-video-polish-freeze
