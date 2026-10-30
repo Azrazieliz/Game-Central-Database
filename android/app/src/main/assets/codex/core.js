@@ -79,7 +79,7 @@ function setOwned(id,value){
 function ownedIds(){return new Set(Object.keys(roster.owned).map(Number))}
 
 function publishPilotSummary(){
-  if(!window.AndroidCodex||typeof AndroidCodex.publishPilotSnapshot!=='function')return false;
+  if(!window.AndroidCodex||typeof window.AndroidCodex.publishPilotSnapshot!=='function')return false;
   const owned=Object.keys(roster.owned).slice(0,1000).map(raw=>{
     const id=Number(raw),e=entityById(id);
     if(!e||!Number.isInteger(id))return null;
@@ -107,7 +107,7 @@ function publishPilotSummary(){
   };
   const json=JSON.stringify(summary);
   if(json.length>400000)return false;
-  try{AndroidCodex.publishPilotSnapshot(json);return true}catch{return false}
+  try{window.AndroidCodex.publishPilotSnapshot(json);return true}catch{return false}
 }
 function setActiveCodexAccount(value){
   if(!['global','jp','unassigned'].includes(value))return;
