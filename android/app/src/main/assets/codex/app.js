@@ -18,7 +18,7 @@ window.codexBack=function(){
 async function boot(){
   catalog=window.CODEX_CATALOG||await(await fetch('data/catalog.json')).json();
   catalog.subsystems=catalog.subsystems||[];catalog.rankings=catalog.rankings||[];
-  loadRoster();buildFamilyBases();
+  loadRoster();buildFamilyBases();publishPilotSummary();
   $('#sheetBackdrop').onclick=closeSheets;
   window.addEventListener('hashchange',route);
   route();

@@ -52,13 +52,72 @@ function gradeClass(g){return 'grade-'+String(g||'').replace('+','plus').toLower
 function confidenceLabel(v){v=Number(v||0);return v>=.9?'High confidence':v>=.72?'Good confidence':v>=.5?'Moderate confidence':'Low confidence'}
 function axisLabel(k){return catalog.adapter?.axes?.[k]?.label||k.replace(/_/g,' ').replace(/\b\w/g,m=>m.toUpperCase())}
 
-function loadRoster(){
-  try{const r=JSON.parse(localStorage.getItem('game_codex_roster_v1')||'{}');roster={owned:r.owned||{}}}catch{roster={owned:{}}}
+// Separate account scopes; legacy unscoped ownership is preserved untouched.
+// No automatic migration to Global or JP, since the owner's account is unknown.
+let activeCodexAccount=localStorage.getItem('game_codex_account_scope_v1')||'unassigned';
+if(!['global','jp','unassigned'].includes(activeCodexAccount))activeCodexAccount='unassigned';
+function scopedRosterKey(){
+  return activeCodexAccount==='unassigned'?'game_codex_roster_v1':
+    'game_codex_roster_'+activeCodexAccount+'_v1'
 }
-function saveRoster(){localStorage.setItem('game_codex_roster_v1',JSON.stringify(roster))}
+function loadRoster(){
+  try{
+    const r=JSON.parse(localStorage.getItem(scopedRosterKey())||'{}');
+    roster={owned:r.owned||{}}
+  }catch{roster={owned:{}}}
+}
+function saveRoster(){
+  localStorage.setItem(scopedRosterKey(),JSON.stringify(roster));
+  publishPilotSummary()
+}
 function isOwned(id){return !!roster.owned[String(id)]}
-function setOwned(id,value){if(value)roster.owned[String(id)]={owned:true,updated_at:new Date().toISOString()};else delete roster.owned[String(id)];saveRoster()}
+function setOwned(id,value){
+  if(value)roster.owned[String(id)]={owned:true,updated_at:new Date().toISOString()};
+  else delete roster.owned[String(id)];
+  saveRoster()
+}
 function ownedIds(){return new Set(Object.keys(roster.owned).map(Number))}
+
+function publishPilotSummary(){
+  if(!window.AndroidCodex||typeof AndroidCodex.publishPilotSnapshot!=='function')return false;
+  const owned=Object.keys(roster.owned).slice(0,1000).map(raw=>{
+    const id=Number(raw),e=entityById(id);
+    if(!e||!Number.isInteger(id))return null;
+    const scenarios=e.codex_evaluation?.scenarios||{};
+    const analysis={};
+    for(const [key,value] of Object.entries(scenarios)){
+      if(!['pvp_opening','pvp_sustained','boss','general_pve','low_investment','max_investment'].includes(key))continue;
+      analysis[key]={
+        score:Number.isFinite(Number(value.score))?Number(value.score):null,
+        confidence:Number.isFinite(Number(value.confidence))?Number(value.confidence):null
+      }
+    }
+    return {
+      id,entity_key:e.entity_key||'',name:displayName(e),
+      rarity:e.rarity_key||'',roles:entityRoles(e),
+      experimental_analysis:analysis,
+      updated_at:roster.owned[raw]?.updated_at||null
+    }
+  }).filter(Boolean);
+  const summary={
+    schema_version:1,game_key:'shoujo_kaisen',account:activeCodexAccount,
+    generated_at:Date.now(),catalog_engine:catalog.engine_version||'unknown',
+    provenance:'game-codex-local-owned-roster',
+    verified_game_inventory:false, grading_authorized:false,owned
+  };
+  const json=JSON.stringify(summary);
+  if(json.length>400000)return false;
+  try{AndroidCodex.publishPilotSnapshot(json);return true}catch{return false}
+}
+function setActiveCodexAccount(value){
+  if(!['global','jp','unassigned'].includes(value))return;
+  activeCodexAccount=value;
+  localStorage.setItem('game_codex_account_scope_v1',value);
+  loadRoster();
+  publishPilotSummary();
+  route();
+  renderSettings()
+}
 
 function characterRows(ownedOnly=false){
   let rows=activeGameEntities().filter(e=>{const q=state.query.trim().toLowerCase(),prof=e.kaisen_meta?.professions||[];return(!ownedOnly||isOwned(e.id))&&(!q||searchable(e).includes(q))&&(!state.filters.rarity||e.rarity_key===state.filters.rarity)&&(!state.filters.faction||e.faction_key===state.filters.faction)&&(!state.filters.attribute||e.attribute_type===state.filters.attribute)&&(!state.filters.profession||prof.includes(state.filters.profession))});
