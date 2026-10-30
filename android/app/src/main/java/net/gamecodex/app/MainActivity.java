@@ -95,6 +95,44 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> MainActivity.this.loadCodex());
         }
 
+        /**
+         * Called only from our bundled WebView. Writes a bounded, schema-checked
+         * account-scoped read-only snapshot for the Pilot content provider.
+         */
+        @JavascriptInterface
+        public void publishPilotSnapshot(String json) {
+            if (json == null || json.length() > 450000) return;
+            try {
+                org.json.JSONObject root = new org.json.JSONObject(json);
+                if (root.optInt("schema_version") != 1 ||
+                    !"shoujo_kaisen".equals(root.optString("game_key"))) return;
+                String account = root.optString("account");
+                if (!account.equals("global") && !account.equals("jp") &&
+                    !account.equals("unassigned")) return;
+                org.json.JSONArray owned = root.optJSONArray("owned");
+                if (owned == null || owned.length() > 1000) return;
+                File dest = new File(getFilesDir(), "pilot-snapshot-" + account + ".json");
+                File stage = new File(getFilesDir(), "pilot-snapshot-" + account + ".next");
+                try (FileOutputStream output = new FileOutputStream(stage)) {
+                    output.write(root.toString().getBytes(StandardCharsets.UTF_8));
+                    output.getFD().sync();
+                }
+                if (!stage.renameTo(dest)) {
+                    try (FileInputStream input = new FileInputStream(stage);
+                         FileOutputStream output = new FileOutputStream(dest)) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = input.read(buf)) >= 0)
+                            output.write(buf, 0, n);
+                        output.getFD().sync();
+                    }
+                    stage.delete();
+                }
+            } catch (Exception ignored) {
+                // Invalid or outdated data never replaces the last good snapshot.
+            }
+        }
+
         @JavascriptInterface
         public void appInfo() {
             runOnUiThread(() -> {
