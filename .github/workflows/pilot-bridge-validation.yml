@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   bridge-validation:
     runs-on: ubuntu-latest
@@ -34,6 +35,43 @@ jobs:
           echo "SDK manager: $SDKMANAGER"
           test -n "$SDKMANAGER"
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Restore complete validated Game Codex v1.0.0 app pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ART_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=game-codex-shoujo-kaisen-app-pack-v1.0.0&per_page=100" --jq '.artifacts | map(select(.expired==false)) | sort_by(.created_at) | last | .id')
+          test -n "$ART_ID"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ART_ID}/zip" > /tmp/codex-app-pack-artifact.zip
+          mkdir -p /tmp/codex-app-pack-artifact /tmp/codex-app-pack
+          unzip -q /tmp/codex-app-pack-artifact.zip -d /tmp/codex-app-pack-artifact
+          PACK="$(find /tmp/codex-app-pack-artifact -name '*app-pack*.zip' -type f | head -n 1)"
+          test -n "$PACK"
+          unzip -q "$PACK" -d /tmp/codex-app-pack
+          SOURCE="$(find /tmp/codex-app-pack -path '*/data/catalog.json' -type f | head -n 1)"
+          test -n "$SOURCE"
+          SOURCE="$(dirname "$(dirname "$SOURCE")")"
+          test -f "$SOURCE/index.html"
+          rm -rf android/app/src/main/assets/codex
+          cp -a "$SOURCE" android/app/src/main/assets/codex
+          # Preserve current branch's tested integration UI over v1.0.0 old assets.
+          git checkout HEAD -- \
+            android/app/src/main/assets/codex/core.js \
+            android/app/src/main/assets/codex/browser.js \
+            android/app/src/main/assets/codex/app.js \
+            android/app/src/main/assets/codex/index.html \
+            android/app/src/main/assets/codex/detail.js \
+            android/app/src/main/assets/codex/styles.css \
+            android/app/src/main/assets/codex/optimizer_worker.js \
+            android/app/src/main/assets/codex/brand-mark.svg
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('android/app/src/main/assets/codex/data/catalog.json')
+          c=json.loads(p.read_text())
+          assert len(c['entities']) >= 520, f"Refuse empty Shoujo data pack: {len(c['entities'])}"
+          assert len(c.get('subsystems') or []) >= 100
+          print('RETAINED_SHOUJO_CODEX',len(c['entities']),len(c['subsystems']))
+          PY
       - name: Compile Codex Android bridge
         run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
