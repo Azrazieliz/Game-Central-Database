@@ -1,0 +1,39 @@
+name: Verify Codex-to-Pilot Bridge
+on:
+  push:
+    branches: [feature/codex-pilot-export-20261030]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bridge-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate current Codex script syntax
+        run: |
+          node --check android/app/src/main/assets/codex/core.js
+          node --check android/app/src/main/assets/codex/browser.js
+          node --check android/app/src/main/assets/codex/app.js
+      - name: Test isolated Codex roster snapshot publishing
+        run: node tests/pilot_bridge_snapshot.test.js
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Ensure Android SDK 35
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Compile Codex Android bridge
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GameCodex-Pilot-Bridge-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
