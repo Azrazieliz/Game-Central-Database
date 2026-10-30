@@ -24,3 +24,11 @@ Account UI: choose **Global**, **JP**, or **Legacy/unassigned** in the Codex set
 - JS syntax checks and Android compile on the integration branch.
 - **Requires an updated Game Codex APK** to be installed alongside updated Pilot APK before native IPC can operate. Never uninstall or clear existing user data merely to upgrade.
 - Actual inter-app Android-provider read and live hero account ownership remain unverified until device test.
+
+## CI and on-device compatibility report (2026-10-30)
+
+- Latest full Codex bridge build: GitHub Actions run `41087528023` **PASS**, Node account-isolation test passed, Android compilation passed, packaged catalogue verified **528 characters / 102 subsystems** and original artwork.
+- Device existing `net.gamecodex.app`: version **1.0.0**, code **100**, signed with SHA-256 `b5390147b2816ef765f8108682426071d26f804d25274aa1d79a0c8cb5f1cdc6`.
+- Bridge build `1.0.1-pilot-bridge` / code **101** signer SHA-256 `b7a52cd78eba70511098848c6fd1c62c3559314a7ce3576511abc81f66d03059`. **INCOMPATIBLE CERTIFICATE.** An in-place update is rejected by Android. Do **not** uninstall/clear existing Codex; preserve the owner's current data and art. No migration has been attempted.
+- Pilot integration build is separately installed successfully, but native cross-app reading requires this provider-enabled Codex package to become available through a safe update or verified migration.
+- No Game Codex `main` changes and no master architecture changes were made.
