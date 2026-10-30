@@ -48,7 +48,7 @@ jobs:
           PACK="$(find /tmp/codex-app-pack-artifact -name '*app-pack*.zip' -type f | head -n 1)"
           test -n "$PACK"
           unzip -q "$PACK" -d /tmp/codex-app-pack
-          SOURCE="$(find /tmp/codex-app-pack -path '*/data/catalog.json' -type f | head -n 1)"
+          SOURCE="$(find /tmp/codex-app-pack -path '*/data/catalog.js' -type f | head -n 1)"
           test -n "$SOURCE"
           SOURCE="$(dirname "$(dirname "$SOURCE")")"
           test -f "$SOURCE/index.html"
@@ -66,8 +66,10 @@ jobs:
             android/app/src/main/assets/codex/brand-mark.svg
           python3 - <<'PY'
           import json, pathlib
-          p=pathlib.Path('android/app/src/main/assets/codex/data/catalog.json')
-          c=json.loads(p.read_text())
+          p=pathlib.Path('android/app/src/main/assets/codex/data/catalog.js')
+          body=p.read_text()
+          assert body.startswith('window.CODEX_CATALOG='), "Expected packaged catalogue JS"
+          c=json.loads(body[len('window.CODEX_CATALOG='):].rstrip(';\\n'))
           assert len(c['entities']) >= 520, f"Refuse empty Shoujo data pack: {len(c['entities'])}"
           assert len(c.get('subsystems') or []) >= 100
           print('RETAINED_SHOUJO_CODEX',len(c['entities']),len(c['subsystems']))
