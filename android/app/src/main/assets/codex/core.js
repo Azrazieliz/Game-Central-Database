@@ -95,7 +95,9 @@ function publishPilotSummary(){
     return {
       id,entity_key:e.entity_key||'',name:displayName(e),
       rarity:e.rarity_key||'',roles:entityRoles(e),
-      experimental_analysis:analysis,
+      // Legacy formula scores are not a verified meta. Keep them inside
+      // experimental Codex code only; never export as recommendations.
+      experimental_analysis:{},
       updated_at:roster.owned[raw]?.updated_at||null
     }
   }).filter(Boolean);
